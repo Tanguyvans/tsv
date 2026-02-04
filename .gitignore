@@ -1,0 +1,35 @@
+# Data files (large dataset)
+data/
+
+# Python virtual environment
+.venv/
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Results (regenerable)
+results/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Model weights
+*.pt
+*.pth
+*.bin
+*.safetensors

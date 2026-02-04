@@ -1,0 +1,21 @@
+# Moondream Anomaly Detection Diagnostic
+# Install: pip install -r requirements.txt
+
+# Core
+torch>=2.0.0
+transformers>=4.40.0
+datasets>=2.18.0
+
+# Data processing
+pandas>=2.0.0
+pyarrow>=15.0.0
+pillow>=10.0.0
+
+# Progress
+tqdm>=4.66.0
+
+# Optional: for faster image loading
+# pyvips-binary
+
+# HuggingFace
+huggingface_hub>=0.21.0
