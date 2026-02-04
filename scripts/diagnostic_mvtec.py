@@ -20,40 +20,45 @@ from transformers import AutoModelForCausalLM
 
 def load_mvtec_samples(data_dir: str, num_samples: int = None, seed: int = 42):
     """
-    Load samples from MVTec AD dataset.
+    Load samples from MVTec AD dataset (Voxel51/FiftyOne format).
 
-    MVTec structure:
-    - category/test/good/ -> normal (label: 0)
-    - category/test/defect_type/ -> anomaly (label: 1)
+    Parses samples.json which contains:
+    - filepath: path to image
+    - category: product category (bottle, grid, etc.)
+    - defect: defect type ("good" = normal, anything else = anomaly)
+    - split: train/test
     """
     data_path = Path(data_dir)
+    samples_file = data_path / "samples.json"
+
+    if not samples_file.exists():
+        print(f"ERROR: {samples_file} not found")
+        return []
+
+    with open(samples_file) as f:
+        data = json.load(f)
+
     samples = []
-
-    # Find all category folders
-    for category_dir in data_path.iterdir():
-        if not category_dir.is_dir():
+    for item in data.get("samples", []):
+        # Only use test split
+        if item.get("split") != "test":
             continue
 
-        test_dir = category_dir / "test"
-        if not test_dir.exists():
+        filepath = data_path / item["filepath"]
+        if not filepath.exists():
             continue
 
-        category = category_dir.name
+        category = item.get("category", {}).get("label", "unknown")
+        defect_label = item.get("defect", {}).get("label", "good")
+        is_normal = defect_label == "good"
 
-        for defect_dir in test_dir.iterdir():
-            if not defect_dir.is_dir():
-                continue
-
-            is_normal = defect_dir.name == "good"
-
-            for img_file in defect_dir.glob("*.png"):
-                samples.append({
-                    "image_path": str(img_file),
-                    "category": category,
-                    "defect_type": defect_dir.name,
-                    "is_anomaly": not is_normal,
-                    "label": 0 if is_normal else 1,
-                })
+        samples.append({
+            "image_path": str(filepath),
+            "category": category,
+            "defect_type": defect_label,
+            "is_anomaly": not is_normal,
+            "label": 0 if is_normal else 1,
+        })
 
     print(f"Found {len(samples)} samples")
     print(f"  Normal: {sum(1 for s in samples if not s['is_anomaly'])}")
