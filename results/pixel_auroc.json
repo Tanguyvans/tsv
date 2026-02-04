@@ -1,0 +1,89 @@
+{
+  "model": "vikhyatk/moondream2 (2025-01-09)",
+  "dataset": "MVTec AD",
+  "timestamp": "2026-02-04T16:42:15.204176",
+  "metrics": {
+    "hit_rate": 0.7281399046104928,
+    "avg_distance": 49.70588854658948,
+    "valid_samples": 1258,
+    "total_samples": 1258
+  },
+  "per_category": {
+    "bottle": {
+      "hit_rate": 0.7619047619047619,
+      "avg_distance": 39.929940203436374,
+      "count": 63
+    },
+    "cable": {
+      "hit_rate": 0.33695652173913043,
+      "avg_distance": 126.1185092946585,
+      "count": 92
+    },
+    "capsule": {
+      "hit_rate": 0.5779816513761468,
+      "avg_distance": 98.9709844077222,
+      "count": 109
+    },
+    "carpet": {
+      "hit_rate": 0.8876404494382022,
+      "avg_distance": 1.0473908375685348,
+      "count": 89
+    },
+    "grid": {
+      "hit_rate": 0.7368421052631579,
+      "avg_distance": 23.35934958438371,
+      "count": 57
+    },
+    "hazelnut": {
+      "hit_rate": 0.7571428571428571,
+      "avg_distance": 36.81242927325412,
+      "count": 70
+    },
+    "leather": {
+      "hit_rate": 0.9021739130434783,
+      "avg_distance": 3.849437310509545,
+      "count": 92
+    },
+    "metal_nut": {
+      "hit_rate": 0.8064516129032258,
+      "avg_distance": 24.31737568090852,
+      "count": 93
+    },
+    "pill": {
+      "hit_rate": 0.7872340425531915,
+      "avg_distance": 18.11943993996834,
+      "count": 141
+    },
+    "screw": {
+      "hit_rate": 0.6470588235294118,
+      "avg_distance": 120.9793425387067,
+      "count": 119
+    },
+    "tile": {
+      "hit_rate": 0.8571428571428571,
+      "avg_distance": 21.079065558420417,
+      "count": 84
+    },
+    "toothbrush": {
+      "hit_rate": 0.43333333333333335,
+      "avg_distance": 43.03071915862127,
+      "count": 30
+    },
+    "transistor": {
+      "hit_rate": 0.375,
+      "avg_distance": 174.74778521331342,
+      "count": 40
+    },
+    "wood": {
+      "hit_rate": 0.8166666666666667,
+      "avg_distance": 19.72779019696592,
+      "count": 60
+    },
+    "zipper": {
+      "hit_rate": 0.8823529411764706,
+      "avg_distance": 23.696821653042406,
+      "count": 119
+    }
+  },
+  "num_results": 1258
+}
