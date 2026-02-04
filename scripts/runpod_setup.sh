@@ -207,17 +207,10 @@ cat > scripts/download_mmad.py << 'DOWNLOAD_SCRIPT'
 """Download MMAD dataset from Hugging Face."""
 
 import os
-import subprocess
-import sys
 
 def main():
     print("Downloading MMAD dataset...")
     os.makedirs("data/mmad", exist_ok=True)
-
-    # Use huggingface-cli to download
-    subprocess.run([
-        sys.executable, "-m", "pip", "install", "-q", "huggingface_hub"
-    ], check=True)
 
     from huggingface_hub import snapshot_download
 
@@ -225,9 +218,8 @@ def main():
         repo_id="jiang-cc/MMAD",
         repo_type="dataset",
         local_dir="data/mmad",
-        allow_patterns=["images/**/*.png", "images/**/*.json", "images/**/*.jpg"],
     )
-    print("Download complete!")
+    print("Download complete")
 
 if __name__ == "__main__":
     main()
