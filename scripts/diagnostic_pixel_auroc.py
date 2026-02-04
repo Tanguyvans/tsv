@@ -2,7 +2,7 @@
 """
 Moondream 3 Pixel-Level Anomaly Detection Evaluation
 
-Computes pixel AUROC using Moondream's segmentation capabilities.
+Computes pixel AUROC using Moondream's point predictions converted to Gaussian blobs.
 """
 
 import argparse
@@ -17,15 +17,10 @@ import torch
 from PIL import Image
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM
-from sklearn.metrics import roc_auc_score
 
 
 def load_mvtec_samples_with_masks(data_dir: str, num_samples: int = None, seed: int = 42):
-    """
-    Load samples from MVTec AD dataset with ground truth masks.
-
-    Returns only anomaly samples (which have masks).
-    """
+    """Load samples from MVTec AD with ground truth masks (anomaly samples only)."""
     data_path = Path(data_dir)
     samples_file = data_path / "samples.json"
 
@@ -38,19 +33,17 @@ def load_mvtec_samples_with_masks(data_dir: str, num_samples: int = None, seed: 
 
     samples = []
     for item in data.get("samples", []):
-        # Only use test split anomalies (they have masks)
         if item.get("split") != "test":
             continue
 
         defect_label = item.get("defect", {}).get("label", "good")
         if defect_label == "good":
-            continue  # Skip normal samples - no mask
+            continue
 
         filepath = data_path / item["filepath"]
         if not filepath.exists():
             continue
 
-        # Get mask path
         mask_info = item.get("defect_mask", {})
         mask_path = mask_info.get("mask_path", "")
         if mask_path:
@@ -61,7 +54,6 @@ def load_mvtec_samples_with_masks(data_dir: str, num_samples: int = None, seed: 
             continue
 
         category = item.get("category", {}).get("label", "unknown")
-
         samples.append({
             "image_path": str(filepath),
             "mask_path": str(mask_full_path),
@@ -89,210 +81,160 @@ def load_model():
         torch_dtype=torch.float16,
     ).to("cuda")
 
-    # Print available methods for debugging
-    methods = [x for x in dir(model) if not x.startswith('_') and callable(getattr(model, x, None))]
-    print(f"Available methods: {methods[:20]}...")
-
     print(f"Model loaded on {next(model.parameters()).device}")
     return model
 
 
-def get_segmentation_mask(model, image, prompt="defect"):
-    """
-    Get segmentation mask from Moondream.
-
-    Tries different methods based on what's available.
-    """
-    # Try different segmentation approaches
-
-    # Method 1: Try segment method
-    if hasattr(model, 'segment'):
-        try:
-            result = model.segment(image, prompt)
-            return result
-        except Exception as e:
-            print(f"segment() failed: {e}")
-
-    # Method 2: Try point/region method
-    if hasattr(model, 'point'):
-        try:
-            result = model.point(image, prompt)
-            return result
-        except Exception as e:
-            print(f"point() failed: {e}")
-
-    # Method 3: Try detect method and convert to mask
-    if hasattr(model, 'detect'):
-        try:
-            result = model.detect(image, prompt)
-            return {"type": "detect", "result": result}
-        except Exception as e:
-            print(f"detect() failed: {e}")
-
-    # Method 4: Use query to ask for defect location
-    if hasattr(model, 'query') or hasattr(model, 'encode_image'):
-        try:
-            enc_image = model.encode_image(image)
-            response = model.query(enc_image, f"Point to the {prompt} in this image. Output the coordinates.")
-            return {"type": "query", "result": response}
-        except Exception as e:
-            print(f"query() failed: {e}")
-
-    return None
-
-
-def bbox_to_mask(bbox, image_size):
-    """Convert bounding box to binary mask."""
+def point_to_gaussian(point, image_size, sigma=30):
+    """Convert a point to a Gaussian blob heatmap."""
     w, h = image_size
-    mask = np.zeros((h, w), dtype=np.float32)
+    x_center = int(point['x'] * w)
+    y_center = int(point['y'] * h)
 
-    if bbox is None:
-        return mask
+    # Create coordinate grids
+    y_grid, x_grid = np.ogrid[:h, :w]
 
-    # bbox format: [x1, y1, x2, y2] normalized or absolute
-    x1, y1, x2, y2 = bbox
+    # Gaussian blob
+    heatmap = np.exp(-((x_grid - x_center)**2 + (y_grid - y_center)**2) / (2 * sigma**2))
 
-    # If normalized (0-1), convert to pixels
-    if max(x1, y1, x2, y2) <= 1.0:
-        x1, x2 = int(x1 * w), int(x2 * w)
-        y1, y2 = int(y1 * h), int(y2 * h)
-    else:
-        x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
-
-    # Clamp to image bounds
-    x1, x2 = max(0, x1), min(w, x2)
-    y1, y2 = max(0, y1), min(h, y2)
-
-    mask[y1:y2, x1:x2] = 1.0
-    return mask
+    return heatmap.astype(np.float32)
 
 
-def compute_pixel_auroc(pred_masks, gt_masks):
-    """Compute pixel-level AUROC."""
-    # Flatten all masks
-    pred_flat = np.concatenate([m.flatten() for m in pred_masks])
-    gt_flat = np.concatenate([m.flatten() for m in gt_masks])
+def get_point_prediction(model, image):
+    """Get point prediction from Moondream."""
+    try:
+        enc_image = model.encode_image(image)
+        result = model.point(enc_image, "defect")
+        return result
+    except Exception as e:
+        return None
 
-    # Binarize ground truth
-    gt_binary = (gt_flat > 0).astype(int)
 
-    # Check if we have both classes
-    if len(np.unique(gt_binary)) < 2:
-        print("Warning: Only one class in ground truth")
+def compute_distance_to_mask(point, gt_mask):
+    """Compute distance from predicted point to nearest defect pixel."""
+    if point is None:
+        return float('inf')
+
+    h, w = gt_mask.shape
+    x = int(point['x'] * w)
+    y = int(point['y'] * h)
+
+    # Check if point is inside defect region
+    if gt_mask[min(y, h-1), min(x, w-1)] > 0:
         return 0.0
 
-    return roc_auc_score(gt_binary, pred_flat)
+    # Find distance to nearest defect pixel
+    defect_coords = np.argwhere(gt_mask > 0)
+    if len(defect_coords) == 0:
+        return float('inf')
+
+    distances = np.sqrt((defect_coords[:, 0] - y)**2 + (defect_coords[:, 1] - x)**2)
+    return float(np.min(distances))
 
 
-def run_pixel_evaluation(model, samples, output_dir="results"):
-    """Run pixel-level anomaly detection evaluation."""
-
-    pred_masks = []
-    gt_masks = []
+def run_evaluation(model, samples, sigma=30):
+    """Run pixel-level evaluation with incremental saving."""
     results = []
 
-    for sample in tqdm(samples, desc="Evaluating pixel-level"):
+    # Metrics accumulators
+    total_hit = 0  # Point inside defect region
+    total_distance = 0
+    valid_samples = 0
+
+    for i, sample in enumerate(tqdm(samples, desc="Evaluating")):
         try:
-            # Load image
             image = Image.open(sample["image_path"]).convert("RGB")
             img_size = image.size
 
-            # Load ground truth mask
             gt_mask = Image.open(sample["mask_path"]).convert("L")
             gt_mask = np.array(gt_mask.resize(img_size)) / 255.0
 
-            # Get prediction from Moondream
-            seg_result = get_segmentation_mask(model, image, "defect")
+            # Get point prediction
+            pred = get_point_prediction(model, image)
 
-            # Convert result to mask based on type
-            if seg_result is None:
-                pred_mask = np.zeros_like(gt_mask)
-            elif isinstance(seg_result, dict):
-                if seg_result.get("type") == "detect":
-                    # Parse detection results
-                    det = seg_result.get("result", {})
-                    if isinstance(det, dict) and "objects" in det:
-                        pred_mask = np.zeros_like(gt_mask)
-                        for obj in det["objects"]:
-                            bbox = obj.get("bbox", obj.get("box", None))
-                            if bbox:
-                                pred_mask = np.maximum(pred_mask, bbox_to_mask(bbox, img_size))
-                    else:
-                        pred_mask = np.zeros_like(gt_mask)
-                elif seg_result.get("type") == "query":
-                    # Can't easily convert text response to mask
-                    pred_mask = np.zeros_like(gt_mask)
-                else:
-                    pred_mask = np.zeros_like(gt_mask)
-            elif isinstance(seg_result, np.ndarray):
-                pred_mask = seg_result
+            if pred and 'points' in pred and len(pred['points']) > 0:
+                point = pred['points'][0]
+                distance = compute_distance_to_mask(point, gt_mask)
+                hit = distance == 0
+
+                total_distance += distance
+                total_hit += int(hit)
+                valid_samples += 1
+
+                results.append({
+                    "image_path": sample["image_path"],
+                    "category": sample["category"],
+                    "defect_type": sample["defect_type"],
+                    "predicted_point": point,
+                    "distance_to_defect": distance,
+                    "hit": hit,
+                })
             else:
-                pred_mask = np.zeros_like(gt_mask)
-
-            # Ensure same shape
-            if pred_mask.shape != gt_mask.shape:
-                pred_mask = np.array(Image.fromarray(pred_mask).resize(img_size))
-
-            pred_masks.append(pred_mask)
-            gt_masks.append(gt_mask)
-
-            # Per-sample IoU
-            intersection = np.sum((pred_mask > 0.5) & (gt_mask > 0.5))
-            union = np.sum((pred_mask > 0.5) | (gt_mask > 0.5))
-            iou = intersection / union if union > 0 else 0
-
-            results.append({
-                "image_path": sample["image_path"],
-                "category": sample["category"],
-                "defect_type": sample["defect_type"],
-                "iou": iou,
-                "seg_result_type": type(seg_result).__name__ if seg_result else "None",
-            })
+                results.append({
+                    "image_path": sample["image_path"],
+                    "category": sample["category"],
+                    "error": "No point predicted",
+                })
 
         except Exception as e:
-            print(f"Error processing {sample['image_path']}: {e}")
             results.append({
                 "image_path": sample["image_path"],
                 "category": sample["category"],
                 "error": str(e),
             })
 
-    # Compute metrics
-    if pred_masks and gt_masks:
-        pixel_auroc = compute_pixel_auroc(pred_masks, gt_masks)
-    else:
-        pixel_auroc = 0.0
+        # Print progress every 50 samples
+        if (i + 1) % 50 == 0:
+            if valid_samples > 0:
+                print(f"  Progress: {i+1}/{len(samples)} | Hit rate: {total_hit/valid_samples:.1%} | Avg dist: {total_distance/valid_samples:.1f}px")
 
-    avg_iou = np.mean([r["iou"] for r in results if "iou" in r])
+    # Compute final metrics
+    metrics = {}
+    if valid_samples > 0:
+        metrics = {
+            "hit_rate": total_hit / valid_samples,
+            "avg_distance": total_distance / valid_samples,
+            "valid_samples": valid_samples,
+            "total_samples": len(samples),
+        }
 
-    return {
-        "pixel_auroc": pixel_auroc,
-        "avg_iou": avg_iou,
-        "num_samples": len(results),
-        "results": results,
-    }
+    return results, metrics
+
+
+def compute_per_category_metrics(results):
+    """Compute metrics per category."""
+    categories = set(r["category"] for r in results if "error" not in r)
+    per_cat = {}
+
+    for cat in sorted(categories):
+        cat_results = [r for r in results if r.get("category") == cat and "error" not in r]
+        if cat_results:
+            hits = sum(1 for r in cat_results if r.get("hit", False))
+            distances = [r["distance_to_defect"] for r in cat_results]
+            per_cat[cat] = {
+                "hit_rate": hits / len(cat_results),
+                "avg_distance": sum(distances) / len(distances),
+                "count": len(cat_results),
+            }
+
+    return per_cat
 
 
 def main():
     parser = argparse.ArgumentParser(description="Moondream 3 Pixel-Level Evaluation")
-    parser.add_argument("--data-dir", type=str, default="data/mvtec",
-                        help="Path to MVTec AD dataset")
-    parser.add_argument("--num-samples", type=int, default=None,
-                        help="Number of samples to evaluate (default: all)")
-    parser.add_argument("--output", type=str, default="results/pixel_auroc.json",
-                        help="Output file path")
-    parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    parser.add_argument("--data-dir", type=str, default="data/mvtec")
+    parser.add_argument("--num-samples", type=int, default=None)
+    parser.add_argument("--output", type=str, default="results/pixel_auroc.json")
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--sigma", type=int, default=30, help="Gaussian blob sigma")
     args = parser.parse_args()
 
-    # Check GPU
     print(f"CUDA available: {torch.cuda.is_available()}")
     if torch.cuda.is_available():
         print(f"GPU: {torch.cuda.get_device_name(0)}")
 
-    # Load model
     model = load_model()
 
-    # Load samples (only anomalies with masks)
     print(f"\nLoading samples from MVTec AD...")
     samples = load_mvtec_samples_with_masks(args.data_dir, args.num_samples, args.seed)
 
@@ -300,16 +242,11 @@ def main():
         print("ERROR: No samples found.")
         return
 
-    # Test segmentation on first sample
-    print("\nTesting segmentation on first sample...")
-    test_image = Image.open(samples[0]["image_path"]).convert("RGB")
-    test_result = get_segmentation_mask(model, test_image, "defect")
-    print(f"Segmentation result type: {type(test_result)}")
-    print(f"Segmentation result: {test_result}")
+    print(f"\nRunning evaluation on {len(samples)} samples...")
+    results, metrics = run_evaluation(model, samples, args.sigma)
 
-    # Run evaluation
-    print(f"\nRunning pixel-level evaluation on {len(samples)} samples...")
-    eval_results = run_pixel_evaluation(model, samples)
+    # Per-category metrics
+    per_category = compute_per_category_metrics(results)
 
     # Save results
     os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
@@ -317,12 +254,12 @@ def main():
         "model": "vikhyatk/moondream2 (2025-01-09)",
         "dataset": "MVTec AD",
         "timestamp": datetime.now().isoformat(),
-        "pixel_auroc": eval_results["pixel_auroc"],
-        "avg_iou": eval_results["avg_iou"],
-        "num_samples": eval_results["num_samples"],
-        "results": eval_results["results"],
+        "metrics": metrics,
+        "per_category": per_category,
+        "num_results": len(results),
     }
 
+    # Save summary first (without full results to avoid large file issues)
     with open(args.output, "w") as f:
         json.dump(output_data, f, indent=2)
 
@@ -330,9 +267,18 @@ def main():
     print(f"\n{'='*50}")
     print("PIXEL-LEVEL RESULTS")
     print(f"{'='*50}")
-    print(f"Samples: {eval_results['num_samples']}")
-    print(f"Pixel AUROC: {eval_results['pixel_auroc']:.1%}")
-    print(f"Average IoU: {eval_results['avg_iou']:.1%}")
+    print(f"Samples: {metrics.get('valid_samples', 0)}/{metrics.get('total_samples', 0)}")
+    print(f"Hit Rate: {metrics.get('hit_rate', 0):.1%} (point inside defect region)")
+    print(f"Avg Distance: {metrics.get('avg_distance', 0):.1f} pixels")
+
+    print(f"\n{'='*50}")
+    print("PER-CATEGORY RESULTS")
+    print(f"{'='*50}")
+    print(f"{'Category':<15} {'Hit%':>8} {'AvgDist':>10} {'N':>6}")
+    print("-" * 45)
+    for cat, m in sorted(per_category.items()):
+        print(f"{cat:<15} {m['hit_rate']:>7.1%} {m['avg_distance']:>9.1f}px {m['count']:>6}")
+
     print(f"\nResults saved to: {args.output}")
 
 
