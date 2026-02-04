@@ -141,9 +141,11 @@ def run_diagnostic(model, samples):
     return results
 
 
-def compute_metrics(results):
+def compute_metrics(results, category=None):
     """Compute evaluation metrics."""
     valid = [r for r in results if "error" not in r]
+    if category:
+        valid = [r for r in valid if r["category"] == category]
 
     if not valid:
         return {}
@@ -153,7 +155,7 @@ def compute_metrics(results):
     fp = sum(1 for r in valid if r["predicted"] and not r["ground_truth"])
     fn = sum(1 for r in valid if not r["predicted"] and r["ground_truth"])
 
-    accuracy = (tp + tn) / len(valid)
+    accuracy = (tp + tn) / len(valid) if valid else 0
     precision = tp / (tp + fp) if (tp + fp) > 0 else 0
     recall = tp / (tp + fn) if (tp + fn) > 0 else 0
     f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
@@ -169,6 +171,12 @@ def compute_metrics(results):
         "fn": fn,
         "total": len(valid),
     }
+
+
+def compute_per_category_metrics(results):
+    """Compute metrics per category."""
+    categories = set(r["category"] for r in results if "error" not in r)
+    return {cat: compute_metrics(results, cat) for cat in sorted(categories)}
 
 
 def main():
@@ -205,6 +213,7 @@ def main():
 
     # Compute metrics
     metrics = compute_metrics(results)
+    per_category = compute_per_category_metrics(results)
 
     # Save results
     os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
@@ -214,6 +223,7 @@ def main():
         "timestamp": datetime.now().isoformat(),
         "num_samples": len(samples),
         "metrics": metrics,
+        "per_category": per_category,
         "results": results,
     }
 
@@ -232,6 +242,16 @@ def main():
     print(f"\nConfusion Matrix:")
     print(f"  TP={metrics['tp']} FP={metrics['fp']}")
     print(f"  FN={metrics['fn']} TN={metrics['tn']}")
+
+    # Per-category results
+    print(f"\n{'='*50}")
+    print("PER-CATEGORY RESULTS")
+    print(f"{'='*50}")
+    print(f"{'Category':<15} {'Acc':>7} {'Prec':>7} {'Rec':>7} {'F1':>7} {'N':>5}")
+    print("-" * 50)
+    for cat, m in sorted(per_category.items()):
+        print(f"{cat:<15} {m['accuracy']:>6.1%} {m['precision']:>6.1%} {m['recall']:>6.1%} {m['f1']:>6.1%} {m['total']:>5}")
+
     print(f"\nResults saved to: {args.output}")
 
 
