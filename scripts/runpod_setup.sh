@@ -6,9 +6,10 @@ set -e
 
 echo "=== Setting up Moondream 3 MMAD Diagnostic ==="
 
-# Create working directory
-mkdir -p ~/tsv
-cd ~/tsv
+# Create working directory (use /workspace for persistence on RunPod)
+WORK_DIR="${WORKSPACE:-/workspace}/tsv"
+mkdir -p "$WORK_DIR"
+cd "$WORK_DIR"
 
 # Install system dependencies
 apt-get update && apt-get install -y git wget unzip
