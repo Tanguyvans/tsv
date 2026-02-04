@@ -35,7 +35,8 @@ from tqdm import tqdm
 # =============================================================================
 
 MMAD_DATASET_ID = "jiang-cc/MMAD"
-MOONDREAM_MODEL_ID = "moondream/moondream3-preview"
+MOONDREAM_MODEL_ID = "vikhyatk/moondream2"
+MOONDREAM_REVISION = "2025-01-09"  # Moondream 3
 
 MVTEC_SUBSET_CATEGORIES = [
     "bottle", "cable", "capsule", "metal_nut",
@@ -156,23 +157,17 @@ def get_image_path(query_image: str, images_dir: Path) -> Optional[Path]:
 
 def load_moondream3(device: str = "cuda"):
     """Load Moondream 3 model."""
-    from transformers import AutoModelForCausalLM, AutoTokenizer
+    from transformers import AutoModelForCausalLM
 
-    print(f"Loading Moondream 3 from {MOONDREAM_MODEL_ID}...")
+    print(f"Loading Moondream 3 from {MOONDREAM_MODEL_ID} (rev: {MOONDREAM_REVISION})...")
 
     model = AutoModelForCausalLM.from_pretrained(
         MOONDREAM_MODEL_ID,
+        revision=MOONDREAM_REVISION,
         trust_remote_code=True,
-        torch_dtype=torch.bfloat16,
+        torch_dtype=torch.float16,
         device_map={"": device},
     )
-
-    # Compile for faster inference (optional, requires PyTorch 2.0+)
-    try:
-        model = torch.compile(model)
-        print("Model compiled with torch.compile()")
-    except Exception as e:
-        print(f"torch.compile() not available: {e}")
 
     print("Moondream 3 loaded successfully")
     return model
@@ -259,9 +254,10 @@ def test_defect_detection(
         try:
             image = Image.open(img_path).convert("RGB")
 
-            # Query Moondream
+            # Query Moondream (encode image first, then query)
             prompt = row["question"] + "\n" + row["options"] + "\nAnswer with the letter only."
-            response = model.query(image, prompt)["answer"]
+            enc_image = model.encode_image(image)
+            response = model.query(enc_image, prompt)["answer"]
 
             predicted = parse_mcq_answer(response, row["options"])
             gt_answer = row["answer"].strip().upper()
@@ -350,7 +346,8 @@ def test_hallucination_rate(
             image = Image.open(img_path).convert("RGB")
 
             prompt = row["question"] + "\n" + row["options"] + "\nAnswer with the letter only."
-            response = model.query(image, prompt)["answer"]
+            enc_image = model.encode_image(image)
+            response = model.query(enc_image, prompt)["answer"]
 
             predicted = parse_mcq_answer(response, row["options"])
             gt_answer = row["answer"].strip().upper()
@@ -437,7 +434,8 @@ def test_miss_rate(
             image = Image.open(img_path).convert("RGB")
 
             prompt = row["question"] + "\n" + row["options"] + "\nAnswer with the letter only."
-            response = model.query(image, prompt)["answer"]
+            enc_image = model.encode_image(image)
+            response = model.query(enc_image, prompt)["answer"]
 
             predicted = parse_mcq_answer(response, row["options"])
             gt_answer = row["answer"].strip().upper()
@@ -512,7 +510,8 @@ def test_defect_type_classification(
             image = Image.open(img_path).convert("RGB")
 
             prompt = row["question"] + "\n" + row["options"] + "\nAnswer with the letter only."
-            response = model.query(image, prompt)["answer"]
+            enc_image = model.encode_image(image)
+            response = model.query(enc_image, prompt)["answer"]
 
             predicted = parse_mcq_answer(response, row["options"])
             gt_answer = row["answer"].strip().upper()
@@ -588,7 +587,8 @@ def test_defect_location(
             image = Image.open(img_path).convert("RGB")
 
             prompt = row["question"] + "\n" + row["options"] + "\nAnswer with the letter only."
-            response = model.query(image, prompt)["answer"]
+            enc_image = model.encode_image(image)
+            response = model.query(enc_image, prompt)["answer"]
 
             predicted = parse_mcq_answer(response, row["options"])
             gt_answer = row["answer"].strip().upper()

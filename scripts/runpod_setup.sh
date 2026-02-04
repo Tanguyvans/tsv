@@ -13,10 +13,10 @@ cd ~/tsv
 # Install system dependencies
 apt-get update && apt-get install -y git wget unzip
 
-# Clone or copy the scripts (for now, create them inline)
-mkdir -p scripts data
+# Clone the repo instead of embedding scripts
+git clone https://github.com/Tanguyvans/tsv.git . 2>/dev/null || git pull
 
-# Create the diagnostic script
+# Create the diagnostic script (simplified version for quick test)
 cat > scripts/diagnostic_moondream.py << 'PYTHON_SCRIPT'
 #!/usr/bin/env python3
 """
@@ -171,12 +171,13 @@ def main():
         json.dump(output_data, f, indent=2)
 
     # Print summary
+    correct_count = sum(1 for r in results if r.get("correct"))
     print(f"\n{'='*50}")
     print(f"DIAGNOSTIC RESULTS")
     print(f"{'='*50}")
     print(f"Model: Moondream 3 (2025-01-09)")
     print(f"Samples: {len(samples)}")
-    print(f"Accuracy: {accuracy:.1%} ({correct}/{len(samples)})")
+    print(f"Accuracy: {accuracy:.1%} ({correct_count}/{len(samples)})")
     print(f"Results saved to: {args.output}")
 
     # Per-category breakdown
