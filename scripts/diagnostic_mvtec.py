@@ -183,8 +183,8 @@ def main():
     parser = argparse.ArgumentParser(description="Moondream 3 MVTec AD Diagnostic")
     parser.add_argument("--data-dir", type=str, default="data/mvtec",
                         help="Path to MVTec AD dataset")
-    parser.add_argument("--num-samples", type=int, default=10,
-                        help="Number of samples to evaluate (default: 10)")
+    parser.add_argument("--num-samples", type=int, default=None,
+                        help="Number of samples to evaluate (default: all)")
     parser.add_argument("--output", type=str, default="results/mvtec_diagnostic.json",
                         help="Output file path")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
@@ -200,7 +200,7 @@ def main():
     model = load_model()
 
     # Load samples
-    print(f"\nLoading {args.num_samples} samples from MVTec AD...")
+    print(f"\nLoading samples from MVTec AD...")
     samples = load_mvtec_samples(args.data_dir, args.num_samples, args.seed)
 
     if not samples:
