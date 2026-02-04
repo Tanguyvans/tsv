@@ -12,8 +12,8 @@ __pycache__/
 *$py.class
 *.so
 
-# Results (regenerable)
-results/
+# Keep results tracked
+# results/
 
 # IDE
 .idea/
