@@ -84,8 +84,7 @@ def load_model():
         revision="2025-01-09",
         trust_remote_code=True,
         torch_dtype=torch.float16,
-        device_map="auto",
-    )
+    ).to("cuda")
 
     print(f"Model loaded on {next(model.parameters()).device}")
     return model
