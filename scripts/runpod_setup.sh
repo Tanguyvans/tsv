@@ -222,7 +222,7 @@ def main():
     from huggingface_hub import snapshot_download
 
     snapshot_download(
-        repo_id="Chenllliang/MMAD",
+        repo_id="jiang-cc/MMAD",
         repo_type="dataset",
         local_dir="data/mmad",
         allow_patterns=["images/**/*.png", "images/**/*.json", "images/**/*.jpg"],
