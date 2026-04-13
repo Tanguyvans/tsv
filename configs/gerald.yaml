@@ -1,0 +1,9 @@
+path: data/gerald
+train: images/train
+val: images/val
+test: images/test
+
+names:
+  0: panel_signal
+  1: mast_pole
+  2: bare_pole

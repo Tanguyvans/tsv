@@ -1,0 +1,8 @@
+# Stage 1 dataset: ne détecte qu'une classe unique "pole" (union mast/panel/bare)
+path: data/gerald
+train: images/train
+val: images/val
+test: images/test
+
+names:
+  0: pole

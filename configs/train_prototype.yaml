@@ -1,0 +1,14 @@
+backbone: resnet50
+img_size: 224
+n_way: 3
+k_shot: 5
+q_query: 5
+episodes: 2000
+lr: 1.0e-4
+scale: 10.0
+log_every: 50
+
+classes: [Cracks, Joints, Grooves, Shellings, Spallings]
+
+train_csv: data/splits/train.csv
+out_dir: outputs/logs/e4_proto

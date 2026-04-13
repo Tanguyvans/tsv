@@ -34,3 +34,7 @@ Thumbs.db
 # Env
 .env
 .env.local
+
+# Local tooling & runtime artifacts
+.claude/
+outputs/

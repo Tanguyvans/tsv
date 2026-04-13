@@ -1,0 +1,14 @@
+model: efficientnet_b3
+img_size: 224
+batch_size: 32
+epochs: 60
+lr: 1.0e-4
+weight_decay: 1.0e-4
+focal_gamma: 2.0
+patience: 10
+t0: 10
+num_workers: 4
+
+train_csv: data/splits/train.csv
+val_csv: data/splits/val.csv
+out_dir: outputs/logs/e1_efficientnet_b3
