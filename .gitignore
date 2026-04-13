@@ -1,0 +1,36 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.Python
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Data & media (too large for git)
+data/
+Images/
+*.mkv
+*.mp4
+*.time
+
+# Models / weights
+*.pt
+*.pth
+*.onnx
+*.h5
+*.ckpt
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Env
+.env
+.env.local
