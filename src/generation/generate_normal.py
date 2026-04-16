@@ -1,142 +1,163 @@
-"""Génère des images de rails sains via fal.ai Nano Banana 2.
+"""Génère des images Normal à partir des images Flakings.
 
-Modes:
-  - generate : text-to-image from-scratch
-  - edit     : remove defect from an existing defect image (single image input)
-  - compose  : combine a rail image (structure source) + an environment image
-               (ballast/scene reference) into a clean Normal sample
+Retire les déchets via SAM 3 + object-removal (LaMa).
+Le rail, boulons et ballast restent pixel-identiques.
 
 Usage:
-  python src/generation/generate_normal.py --mode generate --n 200
-  python src/generation/generate_normal.py --mode edit --src data/surface/Flakings --n 100
-  python src/generation/generate_normal.py --mode compose \
-      --src data/surface/Flakings --env data/_raw/cabview_refs/E2U-dfQ4nNs/frame_0000.jpg --n 50
+  python src/generation/generate_normal.py --src data/surface/Flakings --n 50
+  python src/generation/generate_normal.py --src data/surface/Flakings/image.JPEG
 """
 from __future__ import annotations
 
 import argparse
+import io
 import time
 from pathlib import Path
 
+import cv2
+import numpy as np
 import requests
+from PIL import Image
 
 from src.generation.fal_wrapper import submit_and_wait, upload_file
 
-MODEL_GEN = "fal-ai/nano-banana-2"
-MODEL_EDIT = "fal-ai/nano-banana-2/edit"
+MODEL_SAM = "fal-ai/sam-3/image"
+MODEL_REMOVE = "fal-ai/object-removal/mask"
 
-PROMPT_GEN = (
-    "Top-down photograph of a clean healthy railway rail surface, "
-    "industrial outdoor lighting, sharp focus, high detail, 4K, "
-    "no defects, no cracks, no spalling, no flaking, realistic metal texture"
-)
-PROMPT_EDIT = (
-    "Remove all surface defects (cracks, flakings, spallings, squats, shellings) "
-    "from this railway rail. Restore a clean, healthy top-view rail surface. "
-    "Keep the exact same lighting, angle, framing, texture and background."
-)
-PROMPT_COMPOSE = (
-    "The FIRST image is a close-up top-down photograph of a railway rail. "
-    "The SECOND image is ONLY a reference for the surrounding environment (ballast stones, grass, lighting, color palette). "
-    "Your task: produce a new image that is PIXEL-IDENTICAL to the first image for the metal rail itself — "
-    "keep the exact same rail metal texture, exact same shine, exact same reflections, exact same micro-scratches, "
-    "exact same wear marks, exact same color, exact same bolts, fasteners, joints, position, size, geometry, framing and camera angle. "
-    "DO NOT repaint, re-render, smooth, re-texture, recolor, or 'clean up' the rail metal in any way. "
-    "The rail surface must be copied verbatim from the first image, untouched. "
-    "The ONLY allowed modification is OUTSIDE the rail: replace the ballast, stones, grass and debris around the rail "
-    "with textures and lighting consistent with the second image's environment. "
-    "Do not add new bolts, do not shift or resize the rail, do not change perspective. "
-    "Photorealistic, sharp focus, high detail, same resolution as the first image."
-)
+TRASH_PROMPTS = ["trash", "plastic bag", "litter", "wrapper", "paper", "bottle"]
+DILATE_PX = 8
 
 
-def save_outputs(result: dict, out_dir: Path, stem: str) -> list[Path]:
-    out_dir.mkdir(parents=True, exist_ok=True)
-    saved = []
-    images = result.get("images") or []
-    for i, item in enumerate(images):
-        url = item.get("url") if isinstance(item, dict) else item
-        if not url:
-            continue
-        try:
-            r = requests.get(url, timeout=60)
-            r.raise_for_status()
-            path = out_dir / f"{stem}_{i}.jpg"
-            path.write_bytes(r.content)
-            saved.append(path)
-        except Exception as e:  # noqa: BLE001
-            print(f"  download failed: {e}")
-    return saved
+def _download(url: str) -> bytes:
+    r = requests.get(url, timeout=60)
+    r.raise_for_status()
+    return r.content
 
 
-def mode_generate(n: int, out_dir: Path, num_per_call: int = 4):
-    total = 0
-    call = 0
-    while total < n:
+def _collect_images(src: Path, n: int) -> list[Path]:
+    if src.is_file():
+        return [src]
+    exts = {".jpg", ".jpeg", ".png"}
+    return sorted(p for p in src.rglob("*") if p.suffix.lower() in exts)[:n]
+
+
+def get_trash_mask(image_url: str, size: tuple[int, int]) -> np.ndarray | None:
+    """Détecte les déchets via SAM 3. Retourne mask binaire (255=déchet) ou None."""
+    W, H = size
+    union = np.zeros((H, W), dtype=np.uint8)
+    found_any = False
+
+    for prompt in TRASH_PROMPTS:
         result = submit_and_wait(
-            MODEL_GEN,
-            {"prompt": PROMPT_GEN, "num_images": min(num_per_call, n - total)},
-        )
-        saved = save_outputs(result, out_dir, f"gen_{call:04d}")
-        total += len(saved)
-        print(f"[gen] call {call}: +{len(saved)} (total {total}/{n})")
-        call += 1
-        if not saved:
-            break
-
-
-def mode_edit(src: Path, n: int, out_dir: Path):
-    candidates = sorted([p for p in src.rglob("*") if p.suffix.lower() in {".jpg", ".jpeg", ".png"}])
-    candidates = candidates[:n]
-    for i, img_path in enumerate(candidates):
-        url = upload_file(str(img_path))
-        result = submit_and_wait(
-            MODEL_EDIT,
-            {"prompt": PROMPT_EDIT, "image_urls": [url], "num_images": 1},
-            image_paths=[str(img_path)],
-        )
-        saved = save_outputs(result, out_dir, f"edit_{img_path.stem}")
-        print(f"[edit {i+1}/{len(candidates)}] {img_path.name} → {len(saved)} img")
-        time.sleep(0.2)
-
-
-def mode_compose(src: Path, env: Path, n: int, out_dir: Path):
-    candidates = sorted([p for p in src.rglob("*") if p.suffix.lower() in {".jpg", ".jpeg", ".png"}])
-    candidates = candidates[:n]
-    env_url = upload_file(str(env))
-    for i, rail_path in enumerate(candidates):
-        rail_url = upload_file(str(rail_path))
-        result = submit_and_wait(
-            MODEL_EDIT,
+            MODEL_SAM,
             {
-                "prompt": PROMPT_COMPOSE,
-                "image_urls": [rail_url, env_url],
-                "num_images": 1,
+                "image_url": image_url,
+                "prompt": prompt,
+                "apply_mask": False,
+                "return_multiple_masks": True,
+                "max_masks": 5,
+                "output_format": "png",
             },
-            image_paths=[str(rail_path), str(env)],
         )
-        saved = save_outputs(result, out_dir, f"compose_{rail_path.stem}")
-        print(f"[compose {i+1}/{len(candidates)}] {rail_path.name} → {len(saved)} img")
-        time.sleep(0.2)
+        masks = result.get("masks") or []
+        if masks:
+            print(f"    SAM3[{prompt}]: {len(masks)} mask(s)")
+        for m in masks:
+            murl = m.get("url") if isinstance(m, dict) else None
+            if not murl:
+                continue
+            try:
+                mimg = Image.open(io.BytesIO(_download(murl)))
+                if mimg.size != (W, H):
+                    mimg = mimg.resize((W, H), Image.NEAREST)
+                if mimg.mode == "RGBA":
+                    arr = np.array(mimg.split()[-1])
+                else:
+                    arr = np.array(mimg.convert("L"))
+                union = np.maximum(union, (arr > 127).astype(np.uint8) * 255)
+                found_any = True
+            except Exception as e:
+                print(f"    mask download failed: {e}")
+
+    if not found_any:
+        return None
+
+    if DILATE_PX > 0:
+        k = cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE, (DILATE_PX * 2 + 1, DILATE_PX * 2 + 1)
+        )
+        union = cv2.dilate(union, k)
+
+    coverage = union.sum() / 255 / (W * H) * 100
+    print(f"    mask coverage: {coverage:.1f}%")
+    return union
+
+
+def process_one(src_img: Path, out_dir: Path) -> Path | None:
+    """Retire les déchets d'une image et sauvegarde le résultat."""
+    pil = Image.open(src_img).convert("RGB")
+    W, H = pil.size
+    image_url = upload_file(str(src_img))
+
+    mask = get_trash_mask(image_url, (W, H))
+    if mask is None:
+        print("  no trash detected → copying original")
+        out_path = out_dir / f"normal_{src_img.stem}.jpg"
+        pil.save(out_path, quality=95)
+        return out_path
+
+    # Save debug mask
+    dbg_dir = out_dir / "_debug"
+    dbg_dir.mkdir(parents=True, exist_ok=True)
+    mask_path = dbg_dir / f"{src_img.stem}_mask.png"
+    cv2.imwrite(str(mask_path), mask)
+
+    # Upload mask and remove trash
+    mask_url = upload_file(str(mask_path))
+    result = submit_and_wait(
+        MODEL_REMOVE,
+        {
+            "image_url": image_url,
+            "mask_url": mask_url,
+            "model": "best_quality",
+        },
+        image_paths=[str(src_img), str(mask_path)],
+    )
+
+    images = result.get("images") or []
+    if not images:
+        print("  object-removal returned no image")
+        return None
+
+    url = images[0].get("url") if isinstance(images[0], dict) else None
+    if not url:
+        return None
+
+    out_path = out_dir / f"normal_{src_img.stem}.jpg"
+    out_path.write_bytes(_download(url))
+    print(f"  → {out_path}")
+    return out_path
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--mode", choices=["generate", "edit", "compose"], required=True)
-    ap.add_argument("--n", type=int, default=100)
-    ap.add_argument("--src", default="data/surface/Flakings")
-    ap.add_argument("--env", default="data/_raw/cabview_refs/E2U-dfQ4nNs/frame_0000.jpg",
-                    help="Environment reference image (used in compose mode)")
-    ap.add_argument("--out", default="data/normal_synthetic/Normal")
+    ap = argparse.ArgumentParser(description="Génère des images Normal à partir des Flakings")
+    ap.add_argument("--src", required=True, help="Image ou dossier source (Flakings)")
+    ap.add_argument("--n", type=int, default=10, help="Nombre max d'images à traiter")
+    ap.add_argument("--out", default="data/normal_synthetic/Normal", help="Dossier de sortie")
     args = ap.parse_args()
 
     out_dir = Path(args.out)
-    if args.mode == "generate":
-        mode_generate(args.n, out_dir)
-    elif args.mode == "edit":
-        mode_edit(Path(args.src), args.n, out_dir)
-    else:
-        mode_compose(Path(args.src), Path(args.env), args.n, out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    targets = _collect_images(Path(args.src), args.n)
+    print(f"{len(targets)} image(s) | Output: {out_dir}")
+
+    for i, p in enumerate(targets):
+        print(f"[{i + 1}/{len(targets)}] {p.name}")
+        process_one(p, out_dir)
+        time.sleep(0.2)
+
+    print(f"\nDone. {len(list(out_dir.glob('*.jpg')))} images in {out_dir}")
 
 
 if __name__ == "__main__":

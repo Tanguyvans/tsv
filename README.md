@@ -5,15 +5,19 @@ Outils d'analyse et de visualisation pour un dataset d'images de défauts de sur
 ## Prérequis
 
 - Python 3.11
-- OpenCV (`opencv-python`)
-- NumPy
+- Dépendances listées dans `requirements.txt`
+- Clé API [fal.ai](https://fal.ai) (pour la génération d'images)
 
 ## Installation
 
 ```bash
 python -m venv venv
 source venv/bin/activate
-pip install opencv-python numpy
+pip install -r requirements.txt
+
+# Configurer la clé fal.ai
+cp .env.example .env
+# Éditer .env et ajouter FAL_KEY=...
 ```
 
 ## Utilisation
@@ -37,18 +41,49 @@ python read_video.py Images/depth_0.mkv
 | a       | Frame précédente (en pause)    |
 | q       | Quitter                        |
 
+## Génération d'images Normal
+
+Le dataset ne contient pas de classe "Normal" (rail sans défaut). Les images Flakings contiennent des déchets (plastique, papier) sur le ballast autour du rail. Le pipeline les retire automatiquement pour créer des images Normal :
+
+1. **SAM 3** (`fal-ai/sam-3/image`) détecte les déchets via prompts texte
+2. **Object-removal** (`fal-ai/object-removal/mask`) remplace les zones détectées par extension de la texture du ballast environnant (LaMa)
+
+Le rail, les boulons et le ballast restent **pixel-identiques** à l'original.
+
+```bash
+# Générer 50 images Normal à partir des Flakings
+PYTHONPATH=. python src/generation/generate_normal.py --src data/surface/Flakings --n 50
+
+# Tester sur une seule image
+PYTHONPATH=. python src/generation/generate_normal.py --src data/surface/Flakings/image.JPEG
+
+# Sortie dans un dossier custom
+PYTHONPATH=. python src/generation/generate_normal.py --src data/surface/Flakings --n 100 --out data/surface/Normal
+```
+
 ## Structure du projet
 
 ```
 tsv/
-├── read_video.py          # Lecteur vidéo avec contrôles play/pause
+├── read_video.py              # Lecteur vidéo avec contrôles play/pause
+├── src/
+│   ├── generation/
+│   │   ├── generate_normal.py # Pipeline Normal : SAM 3 + object-removal
+│   │   ├── generate_rare.py   # Génération classes rares (Cracks/Joints/Grooves)
+│   │   ├── augment_from_rsdds.py # Transplantation défauts RSDDs
+│   │   ├── fal_wrapper.py     # Wrapper fal-client (cache, retry, logging)
+│   │   ├── quality_filter.py  # Filtre CLIP-score + LPIPS
+│   │   └── make_comparison.py # Grilles de comparaison avant/après
+│   ├── models/                # Classifieurs (EfficientNet, ViT, PrototypeNet)
+│   ├── training/              # Scripts d'entraînement
+│   └── signals/               # Pipeline détection signaux (Gerald)
+├── configs/                   # Fichiers de configuration YAML
 ├── data/
-│   └── surface/           # 5 153 images de défauts (7 classes)
-├── Images/
-│   ├── color_0.mkv        # Vidéo couleur
-│   ├── depth_0.mkv        # Vidéo de profondeur
-│   └── time_0.time        # Données de synchronisation
-└── venv/                  # Environnement virtuel Python
+│   ├── surface/               # 5 153 images de défauts (7 classes)
+│   ├── normal_synthetic/      # Images Normal générées
+│   └── _raw/cabview_refs/     # Frames caméra frontale train
+├── Images/                    # Vidéos (color_0.mkv, depth_0.mkv)
+└── venv/                      # Environnement virtuel Python
 ```
 
 ## Dataset
