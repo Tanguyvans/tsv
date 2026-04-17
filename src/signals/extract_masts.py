@@ -12,7 +12,7 @@ MAST_NAMES = {"mast", "Mast", "pole", "Pole"}
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--src", default="data/gerald")
+    ap.add_argument("--src", default="data/_raw/gerald_dataset/GERALD/dataset")
     ap.add_argument("--out", default="data/gerald_augmented/has_panel")
     args = ap.parse_args()
 

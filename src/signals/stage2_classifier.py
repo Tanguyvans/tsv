@@ -55,7 +55,7 @@ def main():
 
     items = collect(Path(args.has_panel), Path(args.bare_poles))
     if not items:
-        print("No data — run extract_masts and synth_bare_poles first")
+        print("No data — run extract_masts and generate_bare_poles first")
         return
     rng = np.random.default_rng(0)
     idx = np.arange(len(items)); rng.shuffle(idx)

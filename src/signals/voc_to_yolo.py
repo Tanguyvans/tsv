@@ -47,8 +47,8 @@ def parse_voc(xml_path: Path):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--src", default="data/gerald")
-    ap.add_argument("--out", default="data/gerald/labels")
+    ap.add_argument("--src", default="data/_raw/gerald_dataset/GERALD/dataset")
+    ap.add_argument("--out", default="data/_raw/gerald_dataset/GERALD/dataset/labels")
     ap.add_argument("--default-class", type=int, default=0,
                     help="Class id for unknown VOC class names (panel_signal)")
     args = ap.parse_args()
