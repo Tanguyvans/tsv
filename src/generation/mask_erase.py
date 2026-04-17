@@ -109,6 +109,69 @@ def sam3_mask(
     return union
 
 
+def sam3_mask_from_boxes(
+    image_url: str,
+    size: tuple[int, int],
+    boxes: list[tuple[int, int, int, int]],
+    prompt: str = "",
+    dilate_px: int = 8,
+    verbose: bool = True,
+) -> np.ndarray | None:
+    """Mask SAM 3 à partir de bounding boxes (pixels).
+
+    boxes : liste de (x_min, y_min, x_max, y_max) en pixels.
+    prompt : prompt texte optionnel pour guider (peut rester vide).
+    """
+    if not boxes:
+        return None
+    box_prompts = [
+        {"x_min": int(b[0]), "y_min": int(b[1]), "x_max": int(b[2]),
+         "y_max": int(b[3]), "object_id": i}
+        for i, b in enumerate(boxes)
+    ]
+    result = submit_and_wait(
+        MODEL_SAM,
+        {
+            "image_url": image_url,
+            "prompt": prompt,
+            "box_prompts": box_prompts,
+            "apply_mask": False,
+            "return_multiple_masks": True,
+            "max_masks": max(3, len(boxes)),
+            "output_format": "png",
+        },
+    )
+    masks = result.get("masks") or []
+    if verbose:
+        print(f"    SAM3[boxes x{len(boxes)}]: {len(masks)} mask(s)")
+
+    W, H = size
+    union = np.zeros((H, W), dtype=np.uint8)
+    found_any = False
+    for m in masks:
+        murl = m.get("url") if isinstance(m, dict) else None
+        if not murl:
+            continue
+        try:
+            union = np.maximum(union, _png_bytes_to_mask(download(murl), (W, H)))
+            found_any = True
+        except Exception as e:
+            print(f"    mask download failed: {e}")
+
+    if not found_any:
+        return None
+
+    if dilate_px > 0:
+        k = cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE, (dilate_px * 2 + 1, dilate_px * 2 + 1)
+        )
+        union = cv2.dilate(union, k)
+    if verbose:
+        coverage = union.sum() / 255 / (W * H) * 100
+        print(f"    mask coverage: {coverage:.1f}%")
+    return union
+
+
 def _result_url(result: dict) -> str | None:
     """Extrait l'URL de l'image résultat (compatible Bria/LaMa/autres)."""
     images = result.get("images") or []
