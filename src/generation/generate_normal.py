@@ -22,7 +22,7 @@ from PIL import Image
 from src.generation.fal_wrapper import submit_and_wait, upload_file
 
 MODEL_SAM = "fal-ai/sam-3/image"
-MODEL_REMOVE = "fal-ai/object-removal/mask"
+MODEL_REMOVE = "fal-ai/bria/eraser"
 
 TRASH_PROMPTS = ["trash", "plastic bag", "litter", "wrapper", "paper", "bottle"]
 DILATE_PX = 8
@@ -112,25 +112,29 @@ def process_one(src_img: Path, out_dir: Path) -> Path | None:
     mask_path = dbg_dir / f"{src_img.stem}_mask.png"
     cv2.imwrite(str(mask_path), mask)
 
-    # Upload mask and remove trash
+    # Upload mask and remove trash (Bria Eraser)
     mask_url = upload_file(str(mask_path))
     result = submit_and_wait(
         MODEL_REMOVE,
         {
             "image_url": image_url,
             "mask_url": mask_url,
-            "model": "best_quality",
+            "mask_type": "manual",
         },
         image_paths=[str(src_img), str(mask_path)],
     )
 
+    # Bria returns {"image": {...}}, others return {"images": [...]}
+    url = None
     images = result.get("images") or []
-    if not images:
-        print("  object-removal returned no image")
-        return None
-
-    url = images[0].get("url") if isinstance(images[0], dict) else None
+    if images:
+        url = images[0].get("url") if isinstance(images[0], dict) else None
+    else:
+        img = result.get("image")
+        if isinstance(img, dict):
+            url = img.get("url")
     if not url:
+        print("  eraser returned no image")
         return None
 
     out_path = out_dir / f"normal_{src_img.stem}.jpg"

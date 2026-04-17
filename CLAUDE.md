@@ -26,7 +26,7 @@ python read_video.py Images/depth_0.mkv
 ## Generation d'images Normal
 
 Les images Flakings contiennent des déchets (plastique, papier, emballages) sur le ballast.
-Le pipeline retire ces déchets via SAM 3 (détection) + object-removal (LaMa, remplissage texture).
+Le pipeline retire ces déchets via SAM 3 (détection) + Bria Eraser (ControlNet inpaint).
 Le rail, les boulons et le ballast restent pixel-identiques à l'original.
 
 ```bash

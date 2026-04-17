@@ -46,7 +46,7 @@ python read_video.py Images/depth_0.mkv
 Le dataset ne contient pas de classe "Normal" (rail sans défaut). Les images Flakings contiennent des déchets (plastique, papier) sur le ballast autour du rail. Le pipeline les retire automatiquement pour créer des images Normal :
 
 1. **SAM 3** (`fal-ai/sam-3/image`) détecte les déchets via prompts texte
-2. **Object-removal** (`fal-ai/object-removal/mask`) remplace les zones détectées par extension de la texture du ballast environnant (LaMa)
+2. **Bria Eraser** (`fal-ai/bria/eraser`) remplace les zones détectées par du ballast cohérent via Bria 2.3 + ControlNet Inpaint (training sur data licensée, remplissage de meilleure qualité que LaMa)
 
 Le rail, les boulons et le ballast restent **pixel-identiques** à l'original.
 
