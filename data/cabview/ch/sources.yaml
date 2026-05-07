@@ -1,0 +1,15 @@
+# Sources vidéos cabview Suisse (CFF)
+# Notes :
+#   - Système de signalisation CFF type L (lumineux) + type N (numérique)
+#   - Privilégier vidéos en cab-view (vue depuis le poste de conduite)
+
+videos:
+  - id: fribourg_ins_2014
+    url: https://www.youtube.com/watch?v=5zLke02tJ8I
+    title: "★ 🇨🇭 Fribourg - Ins cab ride, Switzerland [4.7.2014]"
+    uploader: lorirocks777
+    duration_sec: 2245
+    resolution: 1920x1080
+    line: Fribourg - Ins (S-Bahn Bern)
+    region: Fribourg, Bern
+    notes: 1080p, 37min, ligne S-Bahn Bern, signalisation CFF type L

@@ -1,0 +1,16 @@
+# Sources vidéos cabview France (SNCF)
+# Notes :
+#   - licence = YouTube standard, usage recherche interne uniquement
+#   - LGV = signalisation TVM en cabine (peu utile pour panneaux latéraux)
+#   - Privilégier lignes classiques + Transilien + TER
+
+videos:
+  - id: bordeaux_nantes_2023
+    url: https://www.youtube.com/watch?v=yPlbRheB2C4
+    title: "Bordeaux - Nantes cab ride, France [07.2023]"
+    uploader: lorirocks777
+    duration_sec: 14560
+    resolution: 3840x2160
+    line: Bordeaux - Nantes (ligne classique)
+    region: Nouvelle-Aquitaine, Pays de la Loire
+    notes: 4K, 4h05, ligne classique, devrait avoir carrés/sémaphores/avertissements
