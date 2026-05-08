@@ -68,7 +68,7 @@ def run_nb(image_url: str, prompt: str, out_path: Path) -> Path | None:
 def build_comparison(src_path: Path, results: dict[str, Path | None],
                      out_path: Path, target_h: int = 540) -> None:
     """Grille horizontale avec labels : ORIGINAL | LAMA | BRIA | NB_PRO."""
-    import numpy as np
+    from src.utils.viz import hstack_with_labels
 
     panels = [("ORIGINAL", cv2.imread(str(src_path)))]
     for label, key in [("LAMA", "lama"), ("BRIA", "bria"), ("NB_PRO", "nb_pro")]:
@@ -78,22 +78,8 @@ def build_comparison(src_path: Path, results: dict[str, Path | None],
             if img is not None:
                 panels.append((label, img))
 
-    cols = []
-    for label, img in panels:
-        h, w = img.shape[:2]
-        scale = target_h / h
-        new_w = int(w * scale)
-        resized = cv2.resize(img, (new_w, target_h), interpolation=cv2.INTER_AREA)
-        strip = np.full((40, new_w, 3), 240, dtype=np.uint8)
-        cv2.putText(strip, label, (10, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.8,
-                    (20, 20, 20), 2, cv2.LINE_AA)
-        cols.append(np.vstack([strip, resized]))
-
-    sep = np.full((target_h + 40, 10, 3), 255, dtype=np.uint8)
-    out = cols[0]
-    for c in cols[1:]:
-        out = np.hstack([out, sep, c])
-    cv2.imwrite(str(out_path), out, [cv2.IMWRITE_JPEG_QUALITY, 90])
+    viz = hstack_with_labels(panels, target_h=target_h)
+    cv2.imwrite(str(out_path), viz, [cv2.IMWRITE_JPEG_QUALITY, 90])
 
 
 def main():

@@ -130,7 +130,7 @@ Pour une vraie détection, entraîner un YOLO sur le dataset FRSign
 
 - `data/surface/` — 5,153 images across 7 defect class subdirectories
 - `data/normal_synthetic/` — images Normal générées
-- `data/_raw/cabview_refs/` — frames de référence caméra frontale train
+- `data/cabview/_refs/` — frames de référence pour le filtre cab-view (positives + négatives)
 - `Images/` — video files (color_0.mkv, depth_0.mkv) and timing data (time_0.time)
 
 ## Language

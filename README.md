@@ -68,20 +68,22 @@ tsv/
 ├── read_video.py              # Lecteur vidéo avec contrôles play/pause
 ├── src/
 │   ├── generation/
-│   │   ├── generate_normal.py # Pipeline Normal : SAM 3 + object-removal
-│   │   ├── generate_rare.py   # Génération classes rares (Cracks/Joints/Grooves)
-│   │   ├── augment_from_rsdds.py # Transplantation défauts RSDDs
-│   │   ├── fal_wrapper.py     # Wrapper fal-client (cache, retry, logging)
-│   │   ├── quality_filter.py  # Filtre CLIP-score + LPIPS
-│   │   └── make_comparison.py # Grilles de comparaison avant/après
+│   │   ├── generate_normal.py # Pipeline Normal : SAM 3 + Bria Eraser
+│   │   ├── compare_erasers.py # Compare LaMa, Bria, Nano Banana Pro
+│   │   ├── mask_erase.py      # Helpers SAM 3 + Bria Eraser réutilisables
+│   │   └── fal_wrapper.py     # Wrapper fal-client (cache, retry, logging)
 │   ├── models/                # Classifieurs (EfficientNet, ViT, PrototypeNet)
 │   ├── training/              # Scripts d'entraînement
-│   └── signals/               # Pipeline détection signaux (Gerald)
+│   ├── signals/               # Pipeline détection signaux (GERALD)
+│   ├── cabview/                # Pipeline cabview YouTube par région (FR, CH)
+│   ├── depth/                  # Tests Depth Anything 3 sur cabview
+│   └── utils/                  # Helpers viz, métriques
 ├── configs/                   # Fichiers de configuration YAML
 ├── data/
 │   ├── surface/               # 5 153 images de défauts (7 classes)
 │   ├── normal_synthetic/      # Images Normal générées
-│   └── _raw/cabview_refs/     # Frames caméra frontale train
+│   ├── cabview/               # Vidéos cab-view + frames + refs (FR, CH)
+│   └── gerald_augmented/      # Bare poles générés depuis GERALD
 ├── Images/                    # Vidéos (color_0.mkv, depth_0.mkv)
 └── venv/                      # Environnement virtuel Python
 ```
