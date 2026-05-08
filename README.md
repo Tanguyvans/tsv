@@ -111,14 +111,35 @@ Récupère 201 SVG SNCF + 53 SVG CFF depuis Wikimedia Commons.
 | `download.py` | Télécharge les vidéos YouTube de `sources.yaml` (yt-dlp) |
 | `extract_frames.py` | Extrait des frames via ffmpeg (fps configurable) |
 | `check_cabview.py` | Filtre CLIP image-image (cabview vs not_cabview) |
+| `detect_yolo26.py` | Détection de panneaux via YOLOv26 pré-entraîné |
 | `fetch_signal_icons.py` | Scrape Wikimedia Commons pour les diagrammes |
 | `build_catalog.py` | Génère un catalogue HTML des icônes |
 
-> **Note** : la détection automatique de panneaux (zero-shot via VLMs ou
-> détecteurs ouverts type GroundingDINO/Florence-2/Moondream) a été testée
-> et abandonnée — qualité insuffisante. La voie sérieuse passe par
-> l'entraînement d'un YOLO sur GERALD (déjà dans le projet) ou
-> [FRSign](https://frsign.irt-systemx.fr/) (289 GB, demande accès).
+### Détection de panneaux (YOLOv26)
+
+Modèle pré-entraîné agnostique (single-class "sign") :
+[`Otmane42/yolo26s-railway-signs-detector`](https://huggingface.co/Otmane42/yolo26s-railway-signs-detector)
+sur HuggingFace.
+
+```bash
+# Cloner les poids (~20 MB)
+git clone https://huggingface.co/Otmane42/yolo26s-railway-signs-detector models/yolo26s-railway-signs-detector
+
+# Détecter sur un dossier de frames
+PYTHONPATH=. python src/cabview/detect_yolo26.py \
+    --frames data/cabview/fr/frames_cabview/bordeaux_nantes_2023 \
+    --conf 0.25 --imgsz 960
+```
+
+**Performance mesurée :**
+
+| Vidéo | Frames cab-view | Avec ≥1 signal | Vitesse (CPU M3 Pro) |
+|---|---|---|---|
+| Bordeaux-Nantes (FR) | 14 529 | **779 (5.4%)** | ~10 min |
+| Fribourg-Ins (CH) | 2 220 | **420 (18.9%)** | ~1.5 min |
+
+Le modèle (entraîné sur données SNCF) **transfère bien aux signaux CFF
+suisses** — les signaux européens partagent assez de structure visuelle.
 
 ---
 
@@ -248,9 +269,13 @@ chacune), ce qui justifie les pipelines de génération synthétique
 ## Statut & next steps
 
 - ✅ **Cabview pipeline** : opérationnel, validé FR + CH (98%+ précision filtre)
+- ✅ **Détection panneaux** : YOLOv26 pré-entraîné de
+  [Otmane42](https://huggingface.co/Otmane42/yolo26s-railway-signs-detector),
+  bbox correctes FR + CH, ~25 fps CPU
 - ✅ **Bare poles** : pipeline GERALD complet, ~5000 exemples générés
 - ✅ **Normal generation** : SAM 3 + Bria fonctionnel
-- 🔄 **Détection panneaux** : à faire — entraîner YOLO sur GERALD comme
-  baseline, puis évaluer transfert FR/CH
+- 🔄 **Classification fine des panneaux** : à faire — utiliser le catalogue
+  SVG (SNCF + CFF) comme refs et entraîner un classifieur sur les crops
+  YOLO
 - 🔄 **Surface classification** : splits prêts, training à lancer
 - 🔬 **Depth Anything 3** : exploration en cours (`src/depth/`)
