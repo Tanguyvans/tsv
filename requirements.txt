@@ -2,6 +2,7 @@ opencv-python
 numpy
 pandas
 Pillow
+imageio-ffmpeg
 scikit-learn
 tqdm
 pyyaml

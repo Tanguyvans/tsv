@@ -1,281 +1,215 @@
-# TSV — Analyse Ferroviaire (Défauts de Surface + Signalisation)
+# Pipeline de détection et classification des signaux ferroviaires
 
-Outils d'analyse et de génération de datasets ferroviaires :
+## Vue d'ensemble
 
-1. **Surface defects** : classification des défauts de rail en 7 classes
-2. **Bare poles** : génération de poteaux sans signal (à partir de GERALD)
-3. **Cabview** : extraction de frames depuis cab-views YouTube par région (FR, CH...)
-
-## Prérequis
-
-- Python 3.11 + `pip install -r requirements.txt`
-- Pour génération SAM 3 / Bria : clé fal.ai dans `.env` (`cp .env.example .env`)
-- Pour cabview : `yt-dlp` et `ffmpeg` (auto via pip / brew)
-
-```bash
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+```
+Vidéo cab-view YouTube
+        │
+        ▼
+  extract_frames.py          (ffmpeg, 1 fps)
+        │
+        ▼
+  check_cabview.py           (filtre CLIP — rejette drones / intros / écrans noirs)
+        │
+        ▼
+ Frames cab-view filtrées
+        │
+        ▼
+  detect_yolo26.py           (YOLOv26-s pré-entraîné — détecte "il y a un panneau ici")
+        │        │
+        │        └──► viewer HTML  (frames détectées vs manquées)
+        ▼
+  Crops de panneaux (bbox + marge)
+        │
+        ▼
+  match_signals.py  ◄─────── Corpus Wikimedia SVG (SNCF + CFF)   [EN COURS]
+        │                     fetch_signal_icons.py + build_catalog.py
+        │                     201 SVG France · 53 SVG Suisse
+        ▼
+  Top-K matches CLIP
+  viewer HTML : crop → top-5 signaux candidats
 ```
 
 ---
 
-## 1. Pipeline Cabview (signalisation par région)
-
-Construit un dataset de panneaux de signalisation à partir de cab-views YouTube
-par région. Le pipeline filtre automatiquement les frames pour ne garder que
-les vraies vues depuis le poste de conduite (rejette intros, drone shots,
-slides, écrans noirs).
-
-### Workflow
-
-```
-URL YouTube
-    ↓ download.py
-data/cabview/{region}/raw/{id}.mp4
-    ↓ extract_frames.py (ffmpeg, fps=1.0)
-data/cabview/{region}/frames/{id}/*.jpg
-    ↓ check_cabview.py (CLIP image-image vs refs)
-data/cabview/{region}/frames_cabview/{id}/*.jpg + _scores.json
-```
-
-### Utilisation rapide
+## Étape 1 — Acquisition et filtrage des frames
 
 ```bash
-# Pipeline complet en une commande (download → extract → filter)
+# Télécharger une vidéo cab-view YouTube
+PYTHONPATH=. python src/cabview/download.py --region fr --id bordeaux_nantes_2023
+
+# Extraire les frames (1 fps)
+PYTHONPATH=. python src/cabview/extract_frames.py --region fr --id bordeaux_nantes_2023
+
+# Filtrer : ne garder que les vraies vues cab-view
+PYTHONPATH=. python src/cabview/check_cabview.py \
+    --frames data/cabview/fr/frames/bordeaux_nantes_2023 --copy
+
+# Ou tout en une commande
 PYTHONPATH=. python src/cabview/process_video.py --region fr --id bordeaux_nantes_2023 --copy
-
-# Ou étape par étape
-PYTHONPATH=. python src/cabview/download.py        --region fr --id bordeaux_nantes_2023
-PYTHONPATH=. python src/cabview/extract_frames.py  --region fr --id bordeaux_nantes_2023 --fps 1.0
-PYTHONPATH=. python src/cabview/check_cabview.py   --frames data/cabview/fr/frames/bordeaux_nantes_2023 --copy
 ```
 
-### Ajouter une nouvelle région ou vidéo
+Le filtre compare chaque frame aux refs `data/cabview/_refs/` par similarité CLIP
+(cabview vs drones / cartes / slides / écrans noirs).
 
-1. Éditer `data/cabview/{region}/sources.yaml` :
-   ```yaml
-   videos:
-     - id: my_video_id
-       url: https://www.youtube.com/watch?v=XXXXXXXXX
-       title: "..."
-       duration_sec: 1800
-   ```
-2. Lancer `process_video.py --region X --id my_video_id --copy`
+| Vidéo | Frames | Cab-view conservées | Précision |
+|---|---|---|---|
+| Bordeaux → Nantes (FR) | 14 560 | 14 538 | **99.8 %** |
+| Fribourg → Ins (CH) | 2 245 | 2 203 | **98.1 %** |
 
-### Refs cab-view (configurables)
+---
 
-Le filtre CLIP compare chaque frame à un dossier de refs positives (vraies
-cab-views) vs négatives (drones, intros, slides, etc.) :
+## Étape 2 — Détection de panneaux (YOLOv26)
 
-```
-data/cabview/_refs/
-├── cabview/                       # Refs positives
-│   ├── bordeaux_nantes_*.jpg      # Cab-view classique
-│   ├── cabview_countryside.jpg    # Variante campagne
-│   ├── cabview_grille.jpg         # Avec grille pare-soleil
-│   ├── cabview_station_*.jpg      # En gare
-│   └── cabview_station_with_trains.jpg  # Avec trains adjacents
-└── not_cabview/                   # Refs négatives
-    ├── bordeaux_nantes_000093.jpg # Drone shot type 1
-    ├── drone_train_2.jpg          # Drone shot type 2
-    ├── intro_map_ch.jpg           # Carte intro
-    ├── slide_credits_text.jpg     # Slide outro
-    └── black_screen.jpg           # Écran noir technique
-```
-
-Pour améliorer le filtre : ajouter d'autres refs dans ces dossiers.
-
-### Performance mesurée
-
-| Vidéo | Durée | Frames | Cab-view | Précision |
-|---|---|---|---|---|
-| Bordeaux-Nantes (FR) | 4h05 | 14 560 | 14 538 | 99.8% |
-| Fribourg-Ins (CH) | 37 min | 2 245 | 2 203 | 98.1% |
-
-### Catalogue de signaux (référence visuelle)
+Modèle : [`Otmane42/yolo26s-railway-signs-detector`](https://huggingface.co/Otmane42/yolo26s-railway-signs-detector)
+Single-class agnostique — retourne uniquement des bboxes "panneau" sans classification fine.
 
 ```bash
-PYTHONPATH=. python src/cabview/fetch_signal_icons.py
-PYTHONPATH=. python src/cabview/build_catalog.py
-# Ouvrir : data/signals_ref/catalog.html
-```
+# Télécharger les poids (~20 MB)
+git clone https://huggingface.co/Otmane42/yolo26s-railway-signs-detector \
+    models/yolo26s-railway-signs-detector
 
-Récupère 201 SVG SNCF + 53 SVG CFF depuis Wikimedia Commons.
-
-### Modules
-
-| Script | Description |
-|---|---|
-| `process_video.py` | **Wrapper end-to-end** (download → extract → filter) |
-| `download.py` | Télécharge les vidéos YouTube de `sources.yaml` (yt-dlp) |
-| `extract_frames.py` | Extrait des frames via ffmpeg (fps configurable) |
-| `check_cabview.py` | Filtre CLIP image-image (cabview vs not_cabview) |
-| `detect_yolo26.py` | Détection de panneaux via YOLOv26 pré-entraîné |
-| `fetch_signal_icons.py` | Scrape Wikimedia Commons pour les diagrammes |
-| `build_catalog.py` | Génère un catalogue HTML des icônes |
-
-### Détection de panneaux (YOLOv26)
-
-Modèle pré-entraîné agnostique (single-class "sign") :
-[`Otmane42/yolo26s-railway-signs-detector`](https://huggingface.co/Otmane42/yolo26s-railway-signs-detector)
-sur HuggingFace.
-
-```bash
-# Cloner les poids (~20 MB)
-git clone https://huggingface.co/Otmane42/yolo26s-railway-signs-detector models/yolo26s-railway-signs-detector
-
-# Détecter sur un dossier de frames
+# Détecter sur les frames cab-view
 PYTHONPATH=. python src/cabview/detect_yolo26.py \
     --frames data/cabview/fr/frames_cabview/bordeaux_nantes_2023 \
     --conf 0.25 --imgsz 960
-```
 
-**Performance mesurée :**
+# Visualiser (HTML : frames détectées vs sans détection)
+PYTHONPATH=. python src/cabview/build_viewer.py \
+    --frames data/cabview/fr/frames_cabview/bordeaux_nantes_2023 \
+    --detections data/cabview/fr/detections/bordeaux_nantes_2023
+# → ouvrir data/cabview/fr/detections/bordeaux_nantes_2023/viewer.html
+```
 
 | Vidéo | Frames cab-view | Avec ≥1 signal | Vitesse (CPU M3 Pro) |
 |---|---|---|---|
-| Bordeaux-Nantes (FR) | 14 529 | **779 (5.4%)** | ~10 min |
-| Fribourg-Ins (CH) | 2 220 | **420 (18.9%)** | ~1.5 min |
+| Bordeaux → Nantes (FR) | 14 529 | **779 (5.4 %)** | ~10 min |
+| Fribourg → Ins (CH) | 2 220 | **420 (18.9 %)** | ~1.5 min |
 
-Le modèle (entraîné sur données SNCF) **transfère bien aux signaux CFF
-suisses** — les signaux européens partagent assez de structure visuelle.
+Le modèle entraîné sur données SNCF transfère bien aux signaux CFF suisses.
 
----
+### Exemples de détections (Bordeaux → Nantes)
 
-## 2. Pipeline Bare Poles (signaux retirés)
-
-Génère des images de "poteaux nus" (panneau retiré) à partir du dataset
-GERALD allemand. Sert de classe synthétique pour entraîner un modèle
-qui détecte les panneaux tombés / manquants.
-
-```bash
-# Télécharger GERALD (~4.2 GB)
-PYTHONPATH=. python src/signals/download_gerald.py
-
-# Générer N bare poles (SAM 3 + Bria Eraser)
-PYTHONPATH=. python src/signals/generate_bare_poles.py --n 50
-```
-
-**Pipeline :**
-1. Parse les bboxes VOC des classes de signaux (Ks, Hp, Vr, Zs, Ne, Lf, Signal_*)
-2. SAM 3 avec box prompts raffine les masks des panneaux
-3. Bria Eraser retire les panneaux (poteaux préservés pixel-identiques)
-4. Génère les labels YOLO du bare_pole (classe 0) via heuristique
-
-Sortie : `data/gerald_augmented/bare_poles/{images,labels}/`.
-
-**Modules `src/signals/`** : `download_gerald`, `generate_bare_poles`,
-`voc_to_yolo`, `extract_masts`, `stage1_yolo_pole`, `stage2_classifier`,
-`pipeline_a/b`, `eval_pipelines`, `make_before_after`.
+<table>
+<tr>
+  <td><img src="data/cabview/fr/detections/bordeaux_nantes_2023/_thumbs/det_bordeaux_nantes_2023_000049.jpg" width="220"/><br><sub>Campagne, signal distant gauche</sub></td>
+  <td><img src="data/cabview/fr/detections/bordeaux_nantes_2023/_thumbs/det_bordeaux_nantes_2023_000974.jpg" width="220"/><br><sub>Panneau vitesse 40 en forêt</sub></td>
+  <td><img src="data/cabview/fr/detections/bordeaux_nantes_2023/_thumbs/det_bordeaux_nantes_2023_001023.jpg" width="220"/><br><sub>Viaduc, signal Z</sub></td>
+</tr>
+<tr>
+  <td><img src="data/cabview/fr/detections/bordeaux_nantes_2023/_thumbs/det_bordeaux_nantes_2023_004441.jpg" width="220"/><br><sub>Marqueur 515 km, bord de voie</sub></td>
+  <td><img src="data/cabview/fr/detections/bordeaux_nantes_2023/_thumbs/det_bordeaux_nantes_2023_005784.jpg" width="220"/><br><sub>Approche de gare, signal carré</sub></td>
+  <td><img src="data/cabview/fr/detections/bordeaux_nantes_2023/_thumbs/det_bordeaux_nantes_2023_007499.jpg" width="220"/><br><sub>Zone urbaine, feu à droite</sub></td>
+</tr>
+<tr>
+  <td><img src="data/cabview/fr/detections/bordeaux_nantes_2023/_thumbs/det_bordeaux_nantes_2023_010620.jpg" width="220"/><br><sub>Passage à niveau, signal droit</sub></td>
+  <td colspan="2"></td>
+</tr>
+</table>
 
 ---
 
-## 3. Génération Normal (défauts retirés)
+## Étape 3 — Corpus de référence Wikimedia `[EN COURS]`
 
-Le dataset surface ne contient pas de classe "Normal" (rail sans défaut).
-Le pipeline retire les déchets (plastique, papier) des images Flakings
-pour créer des images Normal :
-
-1. **SAM 3** (`fal-ai/sam-3/image`) détecte les déchets via prompts texte
-2. **Bria Eraser** (`fal-ai/bria/eraser`) remplace par du ballast cohérent
-
-Le rail, les boulons et le ballast restent **pixel-identiques** à l'original.
+### Construction du corpus
 
 ```bash
-# Générer 50 images Normal à partir des Flakings
-PYTHONPATH=. python src/generation/generate_normal.py --src data/surface/Flakings --n 50
+# Télécharger les SVG depuis Wikimedia Commons
+PYTHONPATH=. python src/cabview/fetch_signal_icons.py --region fr   # SNCF
+PYTHONPATH=. python src/cabview/fetch_signal_icons.py --region ch   # CFF
 
-# Tester sur une seule image
-PYTHONPATH=. python src/generation/generate_normal.py --src data/surface/Flakings/image.JPEG
+# Catalogue HTML de navigation visuelle
+PYTHONPATH=. python src/cabview/build_catalog.py
+# → ouvrir data/signals_ref/catalog.html
 ```
 
-Sortie dans `data/normal_synthetic/Normal/` par défaut, masks de debug
-dans `_debug/`.
+| Région | Source Wikimedia | SVG téléchargés |
+|---|---|---|
+| France (SNCF) | *Diagrams of railway signals in France* | **201** |
+| Suisse (CFF) | *Diagrams of railway signals in Switzerland* | **53** |
 
-**Modules `src/generation/`** : `generate_normal`, `mask_erase` (helpers
-SAM 3 + Bria), `compare_erasers` (LaMa vs Bria vs Nano Banana Pro),
-`fal_wrapper` (cache disque + retry + logging).
+### Matching CLIP (crop YOLO → catalogue)
+
+```bash
+PYTHONPATH=. python src/cabview/match_signals.py \
+    --frames data/cabview/fr/frames_cabview/bordeaux_nantes_2023 \
+    --detections data/cabview/fr/detections/bordeaux_nantes_2023 \
+    --refs-dir data/signals_ref/fr_diagrams \
+    --conf-min 0.3 --top-k 5
+# → ouvrir data/cabview/fr/matches/bordeaux_nantes_2023/viewer.html
+```
+
+**Principe :**
+1. Les SVG du catalogue sont rendu en PNG (cache disque) et encodés par CLIP
+2. Chaque crop YOLO est encodé par CLIP
+3. Similarité cosinus crop ↔ catalogue → top-K signaux candidats
+4. Viewer HTML : crop détecté + 5 signaux candidats avec score de similarité
 
 ---
 
-## 4. Lecteur vidéo (utility)
+## Statut
 
-```bash
-python read_video.py                  # vidéo couleur par défaut
-python read_video.py Images/depth_0.mkv
-```
-
-| Touche | Action |
+| Étape | Statut |
 |---|---|
-| ESPACE | Play / Pause |
-| d / a | Frame suivante / précédente (en pause) |
-| q | Quitter |
+| Téléchargement vidéos YouTube | ✅ opérationnel |
+| Extraction + filtrage cab-view | ✅ validé FR + CH (≥98 %) |
+| Détection panneaux YOLOv26 | ✅ bbox correctes FR + CH |
+| Corpus SVG Wikimedia | ✅ 201 SNCF + 53 CFF téléchargés |
+| Matching CLIP crop → catalogue | 🔄 en cours d'évaluation |
+| Classification fine des panneaux | ⬜ à faire |
 
 ---
 
-## Structure du projet
+## Structure des données
 
 ```
-tsv/
-├── read_video.py
-├── src/
-│   ├── cabview/              # Pipeline cabview YouTube par région
-│   ├── signals/              # GERALD bare poles + YOLO multi-stage
-│   ├── generation/           # SAM 3 + Bria Eraser (Normal class)
-│   ├── data/                 # Dataset surface (RSDDs splits)
-│   ├── models/               # Classifieurs (EfficientNet, ViT, PrototypeNet)
-│   ├── training/             # Train + evaluate surface defects
-│   ├── depth/                # Tests Depth Anything 3 sur cabview
-│   └── utils/                # viz (grilles d'images), metrics
-├── configs/                  # YAML configs (train, GERALD)
-├── data/
-│   ├── cabview/              # Vidéos + frames + refs par région (FR, CH)
-│   ├── surface/              # 5 153 images défauts (7 classes)
-│   ├── normal_synthetic/     # Images Normal générées
-│   ├── gerald_augmented/     # Bare poles générés
-│   ├── signals_ref/          # Catalogue SVG signaux SNCF + CFF
-│   ├── splits/               # CSV train/val/test surface
-│   └── _raw/                 # Datasets bruts (GERALD, RSDDs)
-├── Images/                   # Vidéos couleur + profondeur
-├── outputs/                  # Logs, comparaisons, fal cache
-└── requirements.txt
+data/
+├── cabview/
+│   ├── fr/
+│   │   ├── sources.yaml
+│   │   ├── raw/                    vidéos .mp4
+│   │   ├── frames/                 toutes les frames extraites
+│   │   ├── frames_cabview/         frames filtrées cab-view
+│   │   ├── detections/             JSONs YOLOv26 + viewer.html
+│   │   └── matches/                résultats CLIP + viewer.html
+│   ├── ch/                         idem pour la Suisse
+│   └── _refs/
+│       ├── cabview/                images de référence positives
+│       └── not_cabview/            images de référence négatives
+└── signals_ref/
+    ├── fr_diagrams/                201 SVG SNCF
+    ├── ch_diagrams/                53 SVG CFF
+    └── catalog.html                catalogue visuel
 ```
 
 ---
 
-## Dataset Surface
+## Modules
 
-### Statistiques
+| Script | Description |
+|---|---|
+| `src/cabview/process_video.py` | Wrapper end-to-end (download → extract → filter) |
+| `src/cabview/download.py` | Téléchargement vidéos YouTube (yt-dlp) |
+| `src/cabview/extract_frames.py` | Extraction frames (ffmpeg) |
+| `src/cabview/check_cabview.py` | Filtre CLIP image-image |
+| `src/cabview/detect_yolo26.py` | Détection panneaux YOLOv26 |
+| `src/cabview/build_viewer.py` | Viewer HTML détections |
+| `src/cabview/fetch_signal_icons.py` | Scrape Wikimedia Commons |
+| `src/cabview/build_catalog.py` | Catalogue HTML des SVG |
+| `src/cabview/match_signals.py` | Matching CLIP crop → catalogue |
 
-| Classe | Nom français | Images | Proportion |
-|---|---|---|---|
-| Flakings | Écaillages | 2 829 | 54.9% |
-| Squats | Squats | 1 844 | 35.8% |
-| Spallings | Déchets | 291 | 5.6% |
-| Shellings | Décollements | 130 | 2.5% |
-| Cracks | Fissures | 40 | 0.8% |
-| Joints | Joints | 11 | 0.2% |
-| Grooves | Rainures | 8 | 0.2% |
-| **Total** | | **5 153** | **100%** |
+## Prérequis
 
-Dataset **fortement déséquilibré** : Flakings + Squats = 90.7%. Trois
-classes (Grooves, Joints, Cracks) sont très sous-représentées (<1%
-chacune), ce qui justifie les pipelines de génération synthétique
-(`src/generation/`) et few-shot learning (`src/models/prototype_net.py`).
+```bash
+python -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+# yt-dlp et ffmpeg sont inclus dans requirements.txt
+```
 
 ---
 
-## Statut & next steps
+## Autres pipelines du repo
 
-- ✅ **Cabview pipeline** : opérationnel, validé FR + CH (98%+ précision filtre)
-- ✅ **Détection panneaux** : YOLOv26 pré-entraîné de
-  [Otmane42](https://huggingface.co/Otmane42/yolo26s-railway-signs-detector),
-  bbox correctes FR + CH, ~25 fps CPU
-- ✅ **Bare poles** : pipeline GERALD complet, ~5000 exemples générés
-- ✅ **Normal generation** : SAM 3 + Bria fonctionnel
-- 🔄 **Classification fine des panneaux** : à faire — utiliser le catalogue
-  SVG (SNCF + CFF) comme refs et entraîner un classifieur sur les crops
-  YOLO
-- 🔄 **Surface classification** : splits prêts, training à lancer
-- 🔬 **Depth Anything 3** : exploration en cours (`src/depth/`)
+- **Bare poles** (`src/signals/`) — retire les panneaux des images GERALD pour simuler des poteaux tombés
+- **Normal generation** (`src/generation/`) — génère des images "Normal" en effaçant les déchets des Flakings via SAM 3 + Bria Eraser
+- **Surface defects** (`src/data/`, `src/models/`) — classification de 5 153 images de défauts rail en 7 classes

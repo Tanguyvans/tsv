@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Pipeline — Signaux ferroviaires</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f7f8fa; color: #1a202c; line-height: 1.6; }
+  header { background: #fff; border-bottom: 2px solid #e2e8f0; padding: 32px 60px 24px; }
+  header h1 { font-size: 1.6rem; font-weight: 700; margin-bottom: 6px; }
+  header p { color: #718096; font-size: 0.92rem; }
+  .badge { display: inline-block; background: #edf2f7; border: 1px solid #cbd5e0; border-radius: 4px; padding: 2px 10px; font-size: 0.75rem; color: #4a5568; margin-right: 6px; margin-top: 10px; }
+  .main { padding: 36px 60px; max-width: 1400px; margin: 0 auto; }
+  hr { border: none; border-top: 1px solid #e2e8f0; margin: 0 0 40px; }
+  .pipeline { display: flex; align-items: center; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 26px 30px; margin-bottom: 44px; overflow-x: auto; }
+  .step { display: flex; flex-direction: column; align-items: center; min-width: 118px; }
+  .step-icon { width: 48px; height: 48px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.25rem; margin-bottom: 8px; }
+  .step-icon.done { background: #f0fff4; border: 1.5px solid #68d391; }
+  .step-icon.wip  { background: #fffbeb; border: 1.5px solid #f6ad55; }
+  .step-label { font-size: 0.76rem; font-weight: 600; color: #2d3748; text-align: center; line-height: 1.3; }
+  .step-sub   { font-size: 0.66rem; color: #a0aec0; text-align: center; margin-top: 3px; }
+  .arrow { color: #cbd5e0; font-size: 1.4rem; padding: 0 10px; margin-bottom: 20px; flex-shrink: 0; }
+  section { margin-bottom: 48px; }
+  section h2 { font-size: 1.03rem; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 9px; }
+  .num { background: #edf2f7; border-radius: 5px; padding: 2px 9px; font-size: 0.72rem; color: #718096; font-weight: 600; }
+  .tag-done { background: #f0fff4; color: #276749; border: 1px solid #9ae6b4; border-radius: 4px; padding: 2px 8px; font-size: 0.69rem; }
+  .tag-wip  { background: #fffbeb; color: #744210; border: 1px solid #fbd38d; border-radius: 4px; padding: 2px 8px; font-size: 0.69rem; }
+  .section-desc { color: #718096; font-size: 0.86rem; margin-bottom: 16px; max-width: 740px; }
+  .stats-row { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+  .stat-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 13px 18px; min-width: 148px; }
+  .stat-card .val { font-size: 1.5rem; font-weight: 700; color: #276749; line-height: 1; }
+  .stat-card .val.orange { color: #c05621; }
+  .stat-card .lbl { font-size: 0.72rem; color: #a0aec0; margin-top: 4px; }
+  .method-box { background: #ebf8ff; border: 1px solid #bee3f8; border-left: 3px solid #63b3ed; border-radius: 6px; padding: 13px 18px; font-size: 0.83rem; color: #2c5282; margin-bottom: 16px; line-height: 1.9; }
+  .method-box code { background: #bee3f8; color: #1a365d; border-radius: 3px; padding: 1px 5px; font-family: monospace; font-size: 0.81rem; }
+  pre { background: #1a202c; border-radius: 8px; padding: 14px 18px; font-size: 0.79rem; color: #a0aec0; overflow-x: auto; margin-bottom: 18px; line-height: 1.8; }
+  pre .cmd  { color: #90cdf4; }
+  pre .flag { color: #fbb6ce; }
+  pre .path { color: #b794f4; }
+  pre .cmt  { color: #4a5568; }
+  .img-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 9px; margin-top: 4px; }
+  .img-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
+  .img-card img { width: 100%; height: 160px; object-fit: cover; display: block; }
+  .img-card .cap { padding: 6px 11px; font-size: 0.7rem; color: #a0aec0; display: flex; justify-content: space-between; }
+  .img-card .cap .score { color: #276749; font-weight: 700; }
+  /* Tabs */
+  .tabs { display: flex; gap: 0; margin-bottom: 16px; border-bottom: 2px solid #e2e8f0; }
+  .tab-btn { background: none; border: none; padding: 9px 20px; font-size: 0.84rem; font-weight: 600; color: #a0aec0; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: color 0.15s; }
+  .tab-btn.active { color: #2b6cb0; border-bottom-color: #2b6cb0; }
+  .tab-btn:hover { color: #4a5568; }
+  .tab-pane { display: none; }
+  .tab-pane.active { display: block; }
+  .video-meta { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+  .vm-chip { background: #edf2f7; border-radius: 20px; padding: 3px 12px; font-size: 0.75rem; color: #4a5568; }
+  .icon-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 7px; margin-top: 6px; }
+  .icon-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 9px 5px 5px; text-align: center; }
+  .icon-card img { width: 100%; height: 64px; object-fit: contain; display: block; }
+  .icon-card .icon-name { font-size: 0.56rem; color: #a0aec0; margin-top: 4px; word-break: break-word; line-height: 1.2; }
+  .subsection-title { font-size: 0.84rem; font-weight: 600; color: #4a5568; margin: 20px 0 8px; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px; }
+  /* Filter results */
+  .filter-results { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
+  .filter-row { display: flex; align-items: center; gap: 14px; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 18px; flex-wrap: wrap; }
+  .fr-flag { font-size: 1.3rem; }
+  .fr-label { font-size: 0.84rem; font-weight: 600; color: #2d3748; min-width: 160px; }
+  .fr-stat { display: flex; flex-direction: column; align-items: center; }
+  .fr-n { font-size: 1.25rem; font-weight: 700; color: #2d3748; line-height: 1; }
+  .fr-n.green { color: #276749; }
+  .fr-n.red   { color: #c05621; }
+  .fr-lbl { font-size: 0.68rem; color: #a0aec0; margin-top: 3px; white-space: nowrap; }
+  .fr-arrow { color: #cbd5e0; font-size: 1.2rem; }
+  .fr-pct { margin-left: auto; background: #f0fff4; border: 1px solid #9ae6b4; border-radius: 20px; padding: 3px 14px; font-size: 0.78rem; font-weight: 700; color: #276749; white-space: nowrap; }
+  /* Limit box */
+  .limit-box { background: #fff5f5; border: 1px solid #fed7d7; border-left: 3px solid #fc8181; border-radius: 6px; padding: 13px 18px; font-size: 0.83rem; color: #742a2a; margin-top: 14px; margin-bottom: 0; }
+  .limit-box strong { color: #c53030; }
+  .limit-examples { display: flex; gap: 10px; margin-top: 10px; }
+  .limit-ex { text-align: center; }
+  .limit-ex img { height: 100px; border-radius: 5px; border: 1px solid #fed7d7; display: block; }
+  .limit-ex .le-lbl { font-size: 0.65rem; color: #c53030; margin-top: 4px; }
+  /* YouTube cards */
+  .yt-cards { display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+  .yt-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; width: 320px; text-decoration: none; color: inherit; transition: box-shadow 0.15s; display: flex; flex-direction: column; }
+  .yt-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.10); }
+  .yt-card .yt-thumb { position: relative; width: 100%; }
+  .yt-card .yt-thumb img { width: 100%; height: 180px; object-fit: cover; display: block; }
+  .yt-card .yt-play { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+  .yt-card .yt-play span { background: rgba(0,0,0,0.65); color: #fff; font-size: 1.6rem; width: 52px; height: 52px; border-radius: 50%; display: flex; align-items: center; justify-content: center; padding-left: 4px; }
+  .yt-card .yt-info { padding: 10px 14px 12px; }
+  .yt-card .yt-title { font-size: 0.82rem; font-weight: 600; color: #1a202c; margin-bottom: 4px; line-height: 1.4; }
+  .yt-card .yt-meta { font-size: 0.71rem; color: #a0aec0; display: flex; gap: 10px; flex-wrap: wrap; }
+  .match-diagram { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px 26px; font-family: "SF Mono", "Fira Code", monospace; font-size: 0.81rem; color: #718096; line-height: 2.2; margin-bottom: 18px; }
+  .match-diagram .hl  { color: #2b6cb0; font-weight: 600; }
+  .match-diagram .wip { color: #c05621; font-weight: 600; }
+  .match-diagram .dim { color: #cbd5e0; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.84rem; background: #fff; border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0; }
+  th { background: #f7fafc; color: #718096; font-weight: 600; text-align: left; padding: 10px 16px; border-bottom: 1px solid #e2e8f0; }
+  td { padding: 10px 16px; border-bottom: 1px solid #f7fafc; }
+  tr:last-child td { border-bottom: none; }
+  .done-row td { color: #276749; }
+  .wip-row  td { color: #c05621; }
+  .todo-row td { color: #a0aec0; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Pipeline — Détection et classification des signaux ferroviaires</h1>
+  <p>Cab-view YouTube → Frames → Filtre CLIP → YOLOv26 → Matching catalogue Wikimedia</p>
+  <div>
+    <span class="badge">Bordeaux → Nantes · 4h05</span>
+    <span class="badge">Fribourg → Ins · 37 min</span>
+    <span class="badge">FR + CH</span>
+  </div>
+</header>
+
+<div class="main">
+<br>
+
+<!-- Pipeline -->
+<div class="pipeline">
+  <div class="step"><div class="step-icon done">🎬</div><div class="step-label">Vidéo YouTube</div><div class="step-sub">cab-view · yt-dlp</div></div>
+  <div class="arrow">→</div>
+  <div class="step"><div class="step-icon done">🖼️</div><div class="step-label">Extraction frames</div><div class="step-sub">ffmpeg · 1 fps</div></div>
+  <div class="arrow">→</div>
+  <div class="step"><div class="step-icon done">🔍</div><div class="step-label">Filtre cab-view</div><div class="step-sub">CLIP · sim pos/neg</div></div>
+  <div class="arrow">→</div>
+  <div class="step"><div class="step-icon done">📦</div><div class="step-label">Détection YOLO</div><div class="step-sub">YOLOv26-s · bbox</div></div>
+  <div class="arrow">→</div>
+  <div class="step"><div class="step-icon wip">🗂️</div><div class="step-label">Corpus Wikimedia</div><div class="step-sub">201 SVG SNCF · 53 CFF</div></div>
+  <div class="arrow">→</div>
+  <div class="step"><div class="step-icon wip">🎯</div><div class="step-label">Matching CLIP</div><div class="step-sub">crop → top-K signaux</div></div>
+</div>
+
+<hr>
+
+<!-- 01 -->
+<section>
+  <h2><span class="num">01</span> Filtrage cab-view <span class="tag-done">✓ opérationnel</span></h2>
+  <p class="section-desc">Chaque frame est comparée à des images de référence via CLIP (ViT-B/32). Une frame est conservée si la similarité aux refs positives dépasse celle aux refs négatives d'une marge fixe.</p>
+  <div class="yt-cards">
+    <a class="yt-card" href="https://www.youtube.com/watch?v=yPlbRheB2C4" target="_blank">
+      <div class="yt-thumb">
+        <img src="https://img.youtube.com/vi/yPlbRheB2C4/hqdefault.jpg" alt="Bordeaux Nantes cab ride">
+        <div class="yt-play"><span>&#9654;</span></div>
+      </div>
+      <div class="yt-info">
+        <div class="yt-title">Bordeaux → Nantes cab ride, France [07.2023]</div>
+        <div class="yt-meta"><span>🇫🇷 SNCF</span><span>4h05</span><span>4K · 3840×2160</span><span>lorirocks777</span></div>
+      </div>
+    </a>
+    <a class="yt-card" href="https://www.youtube.com/watch?v=5zLke02tJ8I" target="_blank">
+      <div class="yt-thumb">
+        <img src="https://img.youtube.com/vi/5zLke02tJ8I/hqdefault.jpg" alt="Fribourg Ins cab ride">
+        <div class="yt-play"><span>&#9654;</span></div>
+      </div>
+      <div class="yt-info">
+        <div class="yt-title">Fribourg → Ins cab ride, Switzerland [2014]</div>
+        <div class="yt-meta"><span>🇨🇭 CFF S-Bahn Bern</span><span>37 min</span><span>1080p</span><span>lorirocks777</span></div>
+      </div>
+    </a>
+  </div>
+
+  <div class="method-box">
+    <strong>Méthode — similarité cosine CLIP image-image</strong><br>
+    <code>sim_pos = max sim(frame, refs cabview)</code><br>
+    <code>sim_neg = max sim(frame, refs not_cabview)</code><br>
+    Décision : <strong>cab-view</strong> si <code>sim_pos &gt; sim_neg + 0.05</code>
+  </div>
+  <div class="limit-box">
+    <strong>Limite connue —</strong> le filtre CLIP ne rejette pas tous les faux positifs.
+    Des frames d'intro (cartes, génériques) peuvent passer et propager des erreurs dans les étapes suivantes —
+    YOLO détecte alors des labels de villes ou du texte graphique comme des "panneaux".
+    <div class="limit-examples">
+      <div class="limit-ex">
+        <img src="data/cabview/ch/detections/fribourg_ins_2014/_thumbs/det_fribourg_ins_2014_000014.jpg" alt="carte faux positif">
+        <div class="le-lbl">Carte intro — YOLO détecte "St. Gallen"</div>
+      </div>
+      <div class="limit-ex">
+        <img src="data/cabview/ch/detections/fribourg_ins_2014/_thumbs/det_fribourg_ins_2014_000016.jpg" alt="carte faux positif 2">
+        <div class="le-lbl">Carte intro — YOLO détecte "Chur"</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr>
+
+<!-- 02 -->
+<section>
+  <h2><span class="num">02</span> Détection de panneaux — YOLOv26 <span class="tag-done">✓ opérationnel</span></h2>
+  <p class="section-desc">Modèle pré-entraîné <strong>Otmane42/yolo26s-railway-signs-detector</strong> (HuggingFace). Single-class agnostique : retourne des bboxes "panneau" sans classification fine. Transfère bien des signaux SNCF aux signaux CFF suisses.</p>
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('fr', this)">Vidéo 1 — Bordeaux → Nantes (FR)</button>
+    <button class="tab-btn" onclick="switchTab('ch', this)">Vidéo 2 — Fribourg → Ins (CH)</button>
+  </div>
+
+  <div id="tab-fr" class="tab-pane active">
+    <div class="video-meta">
+      <span class="vm-chip">4h05 · 14 529 frames cab-view</span>
+      <span class="vm-chip">779 frames avec ≥1 signal (5.4 %)</span>
+      <span class="vm-chip">~10 min CPU M3 Pro</span>
+    </div>
+    <div class="img-grid">
+      <div class="img-card"><img src="data/cabview/fr/detections/bordeaux_nantes_2023/_thumbs/det_bordeaux_nantes_2023_000049.jpg" alt="signal campagne"><div class="cap"><span>Campagne — signal distant</span><span class="score">0.86</span></div></div>
+      <div class="img-card"><img src="data/cabview/fr/detections/bordeaux_nantes_2023/_thumbs/det_bordeaux_nantes_2023_000415.jpg" alt="gare LGV"><div class="cap"><span>Gare LGV — signal quai</span><span class="score">0.64</span></div></div>
+      <div class="img-card"><img src="data/cabview/fr/detections/bordeaux_nantes_2023/_thumbs/det_bordeaux_nantes_2023_000974.jpg" alt="forêt vitesse 40"><div class="cap"><span>Forêt — panneau vitesse 40</span><span class="score">0.86</span></div></div>
+      <div class="img-card"><img src="data/cabview/fr/detections/bordeaux_nantes_2023/_thumbs/det_bordeaux_nantes_2023_001023.jpg" alt="viaduc signal Z"><div class="cap"><span>Viaduc — signal Z</span><span class="score">0.82</span></div></div>
+      <div class="img-card"><img src="data/cabview/fr/detections/bordeaux_nantes_2023/_thumbs/det_bordeaux_nantes_2023_003465.jpg" alt="campagne signal TIV"><div class="cap"><span>Campagne — signal TIV</span><span class="score">0.83</span></div></div>
+      <div class="img-card"><img src="data/cabview/fr/detections/bordeaux_nantes_2023/_thumbs/det_bordeaux_nantes_2023_004361.jpg" alt="zone urbaine panneau"><div class="cap"><span>Zone urbaine — panneau route</span><span class="score">0.45</span></div></div>
+      <div class="img-card"><img src="data/cabview/fr/detections/bordeaux_nantes_2023/_thumbs/det_bordeaux_nantes_2023_004441.jpg" alt="marqueur km"><div class="cap"><span>Marqueur km 515</span><span class="score">0.89</span></div></div>
+      <div class="img-card"><img src="data/cabview/fr/detections/bordeaux_nantes_2023/_thumbs/det_bordeaux_nantes_2023_005146.jpg" alt="passage à niveau village"><div class="cap"><span>Village — passage à niveau (×2)</span><span class="score">0.73</span></div></div>
+      <div class="img-card"><img src="data/cabview/fr/detections/bordeaux_nantes_2023/_thumbs/det_bordeaux_nantes_2023_005784.jpg" alt="approche gare"><div class="cap"><span>Approche de gare — signal carré</span><span class="score">0.91</span></div></div>
+      <div class="img-card"><img src="data/cabview/fr/detections/bordeaux_nantes_2023/_thumbs/det_bordeaux_nantes_2023_007499.jpg" alt="zone urbaine feu"><div class="cap"><span>Zone urbaine — feu à droite</span><span class="score">0.89</span></div></div>
+      <div class="img-card"><img src="data/cabview/fr/detections/bordeaux_nantes_2023/_thumbs/det_bordeaux_nantes_2023_008189.jpg" alt="zone côtière"><div class="cap"><span>Zone côtière — signal voie</span><span class="score">0.64</span></div></div>
+      <div class="img-card"><img src="data/cabview/fr/detections/bordeaux_nantes_2023/_thumbs/det_bordeaux_nantes_2023_010620.jpg" alt="passage à niveau"><div class="cap"><span>Passage à niveau</span><span class="score">0.88</span></div></div>
+      <div class="img-card"><img src="data/cabview/fr/detections/bordeaux_nantes_2023/_thumbs/det_bordeaux_nantes_2023_011173.jpg" alt="double détection"><div class="cap"><span>Ligne droite — double détection</span><span class="score">0.70</span></div></div>
+      <div class="img-card"><img src="data/cabview/fr/detections/bordeaux_nantes_2023/_thumbs/det_bordeaux_nantes_2023_014361.jpg" alt="signal lumineux"><div class="cap"><span>Forêt — signal lumineux</span><span class="score">0.83</span></div></div>
+    </div>
+  </div>
+
+  <div id="tab-ch" class="tab-pane">
+    <div class="video-meta">
+      <span class="vm-chip">37 min · 2 220 frames cab-view</span>
+      <span class="vm-chip">420 frames avec ≥1 signal (18.9 %)</span>
+      <span class="vm-chip">~1.5 min CPU M3 Pro</span>
+    </div>
+    <div class="img-grid">
+      <div class="img-card"><img src="data/cabview/ch/detections/fribourg_ins_2014/_thumbs/det_fribourg_ins_2014_000030.jpg" alt="gare Fribourg"><div class="cap"><span>Gare de Fribourg — départ</span><span class="score">0.79</span></div></div>
+      <div class="img-card"><img src="data/cabview/ch/detections/fribourg_ins_2014/_thumbs/det_fribourg_ins_2014_000196.jpg" alt="campagne signal"><div class="cap"><span>Campagne — signal CFF</span><span class="score">0.40</span></div></div>
+      <div class="img-card"><img src="data/cabview/ch/detections/fribourg_ins_2014/_thumbs/det_fribourg_ins_2014_000304.jpg" alt="campagne CFF"><div class="cap"><span>Campagne — signal voie</span><span class="score">0.73</span></div></div>
+      <div class="img-card"><img src="data/cabview/ch/detections/fribourg_ins_2014/_thumbs/det_fribourg_ins_2014_000382.jpg" alt="courbe forêt"><div class="cap"><span>Courbe — signal en forêt</span><span class="score">0.49</span></div></div>
+      <div class="img-card"><img src="data/cabview/ch/detections/fribourg_ins_2014/_thumbs/det_fribourg_ins_2014_000644.jpg" alt="village passage"><div class="cap"><span>Village — passage à niveau</span><span class="score">0.73</span></div></div>
+      <div class="img-card"><img src="data/cabview/ch/detections/fribourg_ins_2014/_thumbs/det_fribourg_ins_2014_000917.jpg" alt="village signal"><div class="cap"><span>Village — signal latéral</span><span class="score">0.66</span></div></div>
+      <div class="img-card"><img src="data/cabview/ch/detections/fribourg_ins_2014/_thumbs/det_fribourg_ins_2014_000943.jpg" alt="passage à niveau village"><div class="cap"><span>Passage à niveau — village</span><span class="score">0.58</span></div></div>
+      <div class="img-card"><img src="data/cabview/ch/detections/fribourg_ins_2014/_thumbs/det_fribourg_ins_2014_001213.jpg" alt="panneau kilométrique"><div class="cap"><span>Plaine — panneau km (×2)</span><span class="score">0.64</span></div></div>
+      <div class="img-card"><img src="data/cabview/ch/detections/fribourg_ins_2014/_thumbs/det_fribourg_ins_2014_001443.jpg" alt="passage à niveau maison"><div class="cap"><span>Passage à niveau — maison</span><span class="score">0.80</span></div></div>
+      <div class="img-card"><img src="data/cabview/ch/detections/fribourg_ins_2014/_thumbs/det_fribourg_ins_2014_001581.jpg" alt="banlieue signal"><div class="cap"><span>Banlieue — signal lumineux</span><span class="score">0.89</span></div></div>
+      <div class="img-card"><img src="data/cabview/ch/detections/fribourg_ins_2014/_thumbs/det_fribourg_ins_2014_001737.jpg" alt="plaine signal"><div class="cap"><span>Plaine — signal lumineux</span><span class="score">0.69</span></div></div>
+      <div class="img-card"><img src="data/cabview/ch/detections/fribourg_ins_2014/_thumbs/det_fribourg_ins_2014_002142.jpg" alt="plaine vitesse 80"><div class="cap"><span>Plaine — panneau 80 km/h</span><span class="score">0.83</span></div></div>
+    </div>
+  </div>
+</section>
+
+<hr>
+
+<!-- 03 -->
+<section>
+  <h2><span class="num">03</span> Corpus de référence Wikimedia <span class="tag-wip">⟳ en cours</span></h2>
+  <p class="section-desc">Diagrammes SVG officiels téléchargés depuis Wikimedia Commons. Ces diagrammes servent de référence pour identifier le type de chaque signal détecté par YOLO.</p>
+  <div class="stats-row">
+    <div class="stat-card"><div class="val">201</div><div class="lbl">Diagrammes SNCF (France)</div></div>
+    <div class="stat-card"><div class="val">53</div><div class="lbl">Diagrammes CFF (Suisse)</div></div>
+    <div class="stat-card"><div class="val orange">1 199</div><div class="lbl">Crops YOLO à classifier</div></div>
+  </div>
+
+  <div class="subsection-title">France — SNCF (201 diagrammes)</div>
+  <div class="icon-grid">
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/(VL)_Cible_A.jpg" title="(VL)_Cible_A"><div class="icon-name">(VL)_Cible_A</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/ARRET_VOY_TGV1-2.jpg" title="ARRET_VOY_TGV1-2"><div class="icon-name">ARRET_VOY_TGV1-2</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/ARRET_VOY_TTL.jpg" title="ARRET_VOY_TTL"><div class="icon-name">ARRET_VOY_TTL</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/ARRET_VOY_TT_EAS.jpg" title="ARRET_VOY_TT_EAS"><div class="icon-name">ARRET_VOY_TT_EAS</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/A_Cible_A1.jpg" title="A_Cible_A1"><div class="icon-name">A_Cible_A1</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/A_Cible_C1.jpg" title="A_Cible_C1"><div class="icon-name">A_Cible_C1</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/A_Cible_F1.jpg" title="A_Cible_F1"><div class="icon-name">A_Cible_F1</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/A_Cible_H1.jpg" title="A_Cible_H1"><div class="icon-name">A_Cible_H1</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/A_Cible_R1.jpg" title="A_Cible_R1"><div class="icon-name">A_Cible_R1</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/A_Cible_R6.jpg" title="A_Cible_R6"><div class="icon-name">A_Cible_R6</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Approche_Etablissement.jpg" title="Approche_Etablissement"><div class="icon-name">Approche_Etablissement</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Av_A_BAL_F.jpg" title="Av_A_BAL_F"><div class="icon-name">Av_A_BAL_F</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Av_C_BAL.jpg" title="Av_C_BAL"><div class="icon-name">Av_C_BAL</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Av_F_BAL.jpg" title="Av_F_BAL"><div class="icon-name">Av_F_BAL</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Av_H_BAL.jpg" title="Av_H_BAL"><div class="icon-name">Av_H_BAL</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Av_R_BAPR_BM.jpg" title="Av_R_BAPR_BM"><div class="icon-name">Av_R_BAPR_BM</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/AvertissementMecanique.jpg" title="AvertissementMecanique"><div class="icon-name">AvertissementMecanique</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Bande_Jaune.jpg" title="Bande_Jaune"><div class="icon-name">Bande_Jaune</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/CV_A_BAL.jpg" title="CV_A_BAL"><div class="icon-name">CV_A_BAL</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/CV_C_BAL.jpg" title="CV_C_BAL"><div class="icon-name">CV_C_BAL</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/CV_F_BAL.jpg" title="CV_F_BAL"><div class="icon-name">CV_F_BAL</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/CV_H_BAL.jpg" title="CV_H_BAL"><div class="icon-name">CV_H_BAL</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/CV_Sol.jpg" title="CV_Sol"><div class="icon-name">CV_Sol</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/C_Cible_C1.jpg" title="C_Cible_C1"><div class="icon-name">C_Cible_C1</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/C_Cible_F1.jpg" title="C_Cible_F1"><div class="icon-name">C_Cible_F1</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/C_Cible_H1.jpg" title="C_Cible_H1"><div class="icon-name">C_Cible_H1</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/CarreMecanique.jpg" title="CarreMecanique"><div class="icon-name">CarreMecanique</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/CarreVM.jpg" title="CarreVM"><div class="icon-name">CarreVM</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Carre_C_BAL.jpg" title="Carre_C_BAL"><div class="icon-name">Carre_C_BAL</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Carre_F_BAL.jpg" title="Carre_F_BAL"><div class="icon-name">Carre_F_BAL</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Carre_H_BAL.jpg" title="Carre_H_BAL"><div class="icon-name">Carre_H_BAL</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Ccourant.jpg" title="Ccourant"><div class="icon-name">Ccourant</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Chassis_Type_ID4.jpg" title="Chassis_Type_ID4"><div class="icon-name">Chassis_Type_ID4</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Chassis_Type_ID5.jpg" title="Chassis_Type_ID5"><div class="icon-name">Chassis_Type_ID5</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Cible_A1.jpg" title="Cible_A1"><div class="icon-name">Cible_A1</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Cible_A2.jpg" title="Cible_A2"><div class="icon-name">Cible_A2</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Cible_A3.jpg" title="Cible_A3"><div class="icon-name">Cible_A3</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Cible_A_dim.jpg" title="Cible_A_dim"><div class="icon-name">Cible_A_dim</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Cible_C_dim.jpg" title="Cible_C_dim"><div class="icon-name">Cible_C_dim</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Cible_F_dim.jpg" title="Cible_F_dim"><div class="icon-name">Cible_F_dim</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Cible_H_dim.jpg" title="Cible_H_dim"><div class="icon-name">Cible_H_dim</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Cible_K1.jpg" title="Cible_K1"><div class="icon-name">Cible_K1</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Cible_R1.jpg" title="Cible_R1"><div class="icon-name">Cible_R1</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Cible_R2.jpg" title="Cible_R2"><div class="icon-name">Cible_R2</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Cible_R3.jpg" title="Cible_R3"><div class="icon-name">Cible_R3</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Cible_R4.jpg" title="Cible_R4"><div class="icon-name">Cible_R4</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Cible_R5.jpg" title="Cible_R5"><div class="icon-name">Cible_R5</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Cible_R6.jpg" title="Cible_R6"><div class="icon-name">Cible_R6</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Cible_R_dim.jpg" title="Cible_R_dim"><div class="icon-name">Cible_R_dim</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Cv_Cible_A2.jpg" title="Cv_Cible_A2"><div class="icon-name">Cv_Cible_A2</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Cv_Cible_C2.jpg" title="Cv_Cible_C2"><div class="icon-name">Cv_Cible_C2</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Cv_Cible_F2.jpg" title="Cv_Cible_F2"><div class="icon-name">Cv_Cible_F2</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Cv_Cible_H2.jpg" title="Cv_Cible_H2"><div class="icon-name">Cv_Cible_H2</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Cv_Cible_K2.jpg" title="Cv_Cible_K2"><div class="icon-name">Cv_Cible_K2</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/D_Cible_R6.jpg" title="D_Cible_R6"><div class="icon-name">D_Cible_R6</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Dim_Carre_C_BAL.jpg" title="Dim_Carre_C_BAL"><div class="icon-name">Dim_Carre_C_BAL</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Dim_Carre_F_BAL.jpg" title="Dim_Carre_F_BAL"><div class="icon-name">Dim_Carre_F_BAL</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Dim_Carre_H_BAL.jpg" title="Dim_Carre_H_BAL"><div class="icon-name">Dim_Carre_H_BAL</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/DisqueMecanique.jpg" title="DisqueMecanique"><div class="icon-name">DisqueMecanique</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Disque_BAPR_BM.jpg" title="Disque_BAPR_BM"><div class="icon-name">Disque_BAPR_BM</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Douai_signalisation_VU_rouge.jpg" title="Douai_signalisation_VU_rouge"><div class="icon-name">Douai_signalisation_VU_rouge</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Douai_signalisation_VU_vert.jpg" title="Douai_signalisation_VU_vert"><div class="icon-name">Douai_signalisation_VU_vert</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/FIN_CAT.jpg" title="FIN_CAT"><div class="icon-name">FIN_CAT</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/FR-TIV-type-B-160.jpg" title="FR-TIV-type-B-160"><div class="icon-name">FR-TIV-type-B-160</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/FR_Chevron_pointe_en_bas.jpg" title="FR_Chevron_pointe_en_bas"><div class="icon-name">FR_Chevron_pointe_en_bas</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/FR_Chevron_pointe_en_haut.jpg" title="FR_Chevron_pointe_en_haut"><div class="icon-name">FR_Chevron_pointe_en_haut</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/FR_Pancarte_Km.jpg" title="FR_Pancarte_Km"><div class="icon-name">FR_Pancarte_Km</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/FR_TIV-type-C-180.jpg" title="FR_TIV-type-C-180"><div class="icon-name">FR_TIV-type-C-180</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/FR_Tableau_P.jpg" title="FR_Tableau_P"><div class="icon-name">FR_Tableau_P</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Guidon_d'Arrêt.jpg" title="Guidon_d'Arrêt"><div class="icon-name">Guidon_d'Arrêt</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Heurtoir_500m.jpg" title="Heurtoir_500m"><div class="icon-name">Heurtoir_500m</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/ICC2c.jpg" title="ICC2c"><div class="icon-name">ICC2c</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/ICC2p.jpg" title="ICC2p"><div class="icon-name">ICC2p</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/IccA.jpg" title="IccA"><div class="icon-name">IccA</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/IccP.jpg" title="IccP"><div class="icon-name">IccP</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Indicateur_de_Direction_(ID2).jpg" title="Indicateur_de_Direction_(ID2)"><div class="icon-name">Indicateur_de_Direction_(ID2)</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Indicateur_de_Direction_(ID4).jpg" title="Indicateur_de_Direction_(ID4)"><div class="icon-name">Indicateur_de_Direction_(ID4)</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Indicateur_de_Direction_(ID5).jpg" title="Indicateur_de_Direction_(ID5)"><div class="icon-name">Indicateur_de_Direction_(ID5)</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Jalon_Manoeuvre.jpg" title="Jalon_Manoeuvre"><div class="icon-name">Jalon_Manoeuvre</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Jalon_d'arret.jpg" title="Jalon_d'arret"><div class="icon-name">Jalon_d'arret</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Jalon_d'arrêt_E.jpg" title="Jalon_d'arrêt_E"><div class="icon-name">Jalon_d'arrêt_E</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/LIMITETS.jpg" title="LIMITETS"><div class="icon-name">LIMITETS</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/M_A_BAL.jpg" title="M_A_BAL"><div class="icon-name">M_A_BAL</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/M_Cible_A2.jpg" title="M_Cible_A2"><div class="icon-name">M_Cible_A2</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/M_Cible_C2.jpg" title="M_Cible_C2"><div class="icon-name">M_Cible_C2</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/M_Cible_F2.jpg" title="M_Cible_F2"><div class="icon-name">M_Cible_F2</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/M_Cible_H2.jpg" title="M_Cible_H2"><div class="icon-name">M_Cible_H2</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/M_Cible_K2.jpg" title="M_Cible_K2"><div class="icon-name">M_Cible_K2</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/M_Sol.jpg" title="M_Sol"><div class="icon-name">M_Sol</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/ManoeuvreARd.jpg" title="ManoeuvreARd"><div class="icon-name">ManoeuvreARd</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/ManoeuvreARg.jpg" title="ManoeuvreARg"><div class="icon-name">ManoeuvreARg</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/ManoeuvreAV.jpg" title="ManoeuvreAV"><div class="icon-name">ManoeuvreAV</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/ManoeuvreAVd.jpg" title="ManoeuvreAVd"><div class="icon-name">ManoeuvreAVd</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/ManoeuvreAVg.jpg" title="ManoeuvreAVg"><div class="icon-name">ManoeuvreAVg</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/ManoeuvreVoielibre.jpg" title="ManoeuvreVoielibre"><div class="icon-name">ManoeuvreVoielibre</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Manoeuvrestop.jpg" title="Manoeuvrestop"><div class="icon-name">Manoeuvrestop</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/MongyLM.jpg" title="MongyLM"><div class="icon-name">MongyLM</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/MongyR.jpg" title="MongyR"><div class="icon-name">MongyR</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Numbering_Type_A2.jpg" title="Numbering_Type_A2"><div class="icon-name">Numbering_Type_A2</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Numbering_Type_ID.jpg" title="Numbering_Type_ID"><div class="icon-name">Numbering_Type_ID</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/PN.jpg" title="PN"><div class="icon-name">PN</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Pancarte_ARRET.jpg" title="Pancarte_ARRET"><div class="icon-name">Pancarte_ARRET</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Pancarte_ATC.jpg" title="Pancarte_ATC"><div class="icon-name">Pancarte_ATC</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Pancarte_Arrêt_A.jpg" title="Pancarte_Arrêt_A"><div class="icon-name">Pancarte_Arrêt_A</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Pancarte_BIMODE.jpg" title="Pancarte_BIMODE"><div class="icon-name">Pancarte_BIMODE</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Pancarte_BIMODE_A.jpg" title="Pancarte_BIMODE_A"><div class="icon-name">Pancarte_BIMODE_A</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Pancarte_L.jpg" title="Pancarte_L"><div class="icon-name">Pancarte_L</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Pancarte_LGR.jpg" title="Pancarte_LGR"><div class="icon-name">Pancarte_LGR</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Pancarte_PN.jpg" title="Pancarte_PN"><div class="icon-name">Pancarte_PN</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Pancarte_PN_avec_bandeau.jpg" title="Pancarte_PN_avec_bandeau"><div class="icon-name">Pancarte_PN_avec_bandeau</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Pancarte_REV.jpg" title="Pancarte_REV"><div class="icon-name">Pancarte_REV</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Pancarte_S+J.jpg" title="Pancarte_S+J"><div class="icon-name">Pancarte_S+J</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Pancarte_S.jpg" title="Pancarte_S"><div class="icon-name">Pancarte_S</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Pancarte_SAS.jpg" title="Pancarte_SAS"><div class="icon-name">Pancarte_SAS</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Pancarte_STOP.jpg" title="Pancarte_STOP"><div class="icon-name">Pancarte_STOP</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Pancarte_STOP_A.jpg" title="Pancarte_STOP_A"><div class="icon-name">Pancarte_STOP_A</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/PermCancelled_H_BAL.jpg" title="PermCancelled_H_BAL"><div class="icon-name">PermCancelled_H_BAL</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Plaque_DD.jpg" title="Plaque_DD"><div class="icon-name">Plaque_DD</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Plaque_mi-blanche_mi-verte.jpg" title="Plaque_mi-blanche_mi-verte"><div class="icon-name">Plaque_mi-blanche_mi-verte</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Preavertissement.jpg" title="Preavertissement"><div class="icon-name">Preavertissement</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/R+A_Cible_F1.jpg" title="R+A_Cible_F1"><div class="icon-name">R+A_Cible_F1</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/R+A_Cible_H1.jpg" title="R+A_Cible_H1"><div class="icon-name">R+A_Cible_H1</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/R+A_Cible_R6.jpg" title="R+A_Cible_R6"><div class="icon-name">R+A_Cible_R6</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/R30+A_F_BAL_Nf.jpg" title="R30+A_F_BAL_Nf"><div class="icon-name">R30+A_F_BAL_Nf</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/R30_F_BAL_F.jpg" title="R30_F_BAL_F"><div class="icon-name">R30_F_BAL_F</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/R30_F_BAL_Nf.jpg" title="R30_F_BAL_Nf"><div class="icon-name">R30_F_BAL_Nf</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/RR+A_Cible_H1.jpg" title="RR+A_Cible_H1"><div class="icon-name">RR+A_Cible_H1</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/RR30+A_H_BAL.jpg" title="RR30+A_H_BAL"><div class="icon-name">RR30+A_H_BAL</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/RR30_H_BAL.jpg" title="RR30_H_BAL"><div class="icon-name">RR30_H_BAL</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/RR_Cible_H1.jpg" title="RR_Cible_H1"><div class="icon-name">RR_Cible_H1</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/R_Cible_F1.jpg" title="R_Cible_F1"><div class="icon-name">R_Cible_F1</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/R_Cible_H1.jpg" title="R_Cible_H1"><div class="icon-name">R_Cible_H1</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/R_Cible_R6.jpg" title="R_Cible_R6"><div class="icon-name">R_Cible_R6</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/RalentissementM.jpg" title="RalentissementM"><div class="icon-name">RalentissementM</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/RappelRalentissementM.jpg" title="RappelRalentissementM"><div class="icon-name">RappelRalentissementM</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Rcourant.jpg" title="Rcourant"><div class="icon-name">Rcourant</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/SNCF_A-type_head_layout.jpg" title="SNCF_A-type_head_layout"><div class="icon-name">SNCF_A-type_head_layout</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/SNCF_A-type_head_outline.jpg" title="SNCF_A-type_head_outline"><div class="icon-name">SNCF_A-type_head_outline</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/SNCF_C-type_head_layout.jpg" title="SNCF_C-type_head_layout"><div class="icon-name">SNCF_C-type_head_layout</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/SNCF_C-type_head_outline.jpg" title="SNCF_C-type_head_outline"><div class="icon-name">SNCF_C-type_head_outline</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/SNCF_F-type_head_layout.jpg" title="SNCF_F-type_head_layout"><div class="icon-name">SNCF_F-type_head_layout</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/SNCF_F-type_head_outline.jpg" title="SNCF_F-type_head_outline"><div class="icon-name">SNCF_F-type_head_outline</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/SNCF_H-type_head_layout.jpg" title="SNCF_H-type_head_layout"><div class="icon-name">SNCF_H-type_head_layout</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/SNCF_H-type_head_outline.jpg" title="SNCF_H-type_head_outline"><div class="icon-name">SNCF_H-type_head_outline</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/SNCF_ID3-type_head_outline.jpg" title="SNCF_ID3-type_head_outline"><div class="icon-name">SNCF_ID3-type_head_outline</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/SNCF_K-type_head_layout.jpg" title="SNCF_K-type_head_layout"><div class="icon-name">SNCF_K-type_head_layout</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/SNCF_K-type_head_outline.jpg" title="SNCF_K-type_head_outline"><div class="icon-name">SNCF_K-type_head_outline</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/SNCF_R-type_head_layout.jpg" title="SNCF_R-type_head_layout"><div class="icon-name">SNCF_R-type_head_layout</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/SNCF_R-type_head_outline.jpg" title="SNCF_R-type_head_outline"><div class="icon-name">SNCF_R-type_head_outline</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/S_A_BAL_F.jpg" title="S_A_BAL_F"><div class="icon-name">S_A_BAL_F</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/S_Cible_A1.jpg" title="S_Cible_A1"><div class="icon-name">S_Cible_A1</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/S_Cible_A3.jpg" title="S_Cible_A3"><div class="icon-name">S_Cible_A3</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/S_Cible_C1.jpg" title="S_Cible_C1"><div class="icon-name">S_Cible_C1</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/S_Cible_F1.jpg" title="S_Cible_F1"><div class="icon-name">S_Cible_F1</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/S_Cible_H1.jpg" title="S_Cible_H1"><div class="icon-name">S_Cible_H1</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/S_Cible_K1.jpg" title="S_Cible_K1"><div class="icon-name">S_Cible_K1</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Semaphore_A_BAL_F.jpg" title="Semaphore_A_BAL_F"><div class="icon-name">Semaphore_A_BAL_F</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Semaphore_A_BAPR.jpg" title="Semaphore_A_BAPR"><div class="icon-name">Semaphore_A_BAPR</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Semaphore_A_BM.jpg" title="Semaphore_A_BM"><div class="icon-name">Semaphore_A_BM</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Semaphore_C_BAL.jpg" title="Semaphore_C_BAL"><div class="icon-name">Semaphore_C_BAL</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Semaphore_F_BAL.jpg" title="Semaphore_F_BAL"><div class="icon-name">Semaphore_F_BAL</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Semaphore_F_BAL_F.jpg" title="Semaphore_F_BAL_F"><div class="icon-name">Semaphore_F_BAL_F</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Semaphore_H_BAL.jpg" title="Semaphore_H_BAL"><div class="icon-name">Semaphore_H_BAL</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Signal_Carre_reduit.jpg" title="Signal_Carre_reduit"><div class="icon-name">Signal_Carre_reduit</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Signal_au_Jaune_20.jpg" title="Signal_au_Jaune_20"><div class="icon-name">Signal_au_Jaune_20</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Signaux_à_droite.jpg" title="Signaux_à_droite"><div class="icon-name">Signaux_à_droite</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Signaux_à_gauche.jpg" title="Signaux_à_gauche"><div class="icon-name">Signaux_à_gauche</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/TIV_D_MOB_100.jpg" title="TIV_D_MOB_100"><div class="icon-name">TIV_D_MOB_100</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/TIV_R_MOB_60.jpg" title="TIV_R_MOB_60"><div class="icon-name">TIV_R_MOB_60</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/TRAM_FEUX.jpg" title="TRAM_FEUX"><div class="icon-name">TRAM_FEUX</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/TRd.jpg" title="TRd"><div class="icon-name">TRd</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/TRd2.jpg" title="TRd2"><div class="icon-name">TRd2</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/TRh.jpg" title="TRh"><div class="icon-name">TRh</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/TRh2.jpg" title="TRh2"><div class="icon-name">TRh2</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/TRh3.jpg" title="TRh3"><div class="icon-name">TRh3</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/TRhJ.jpg" title="TRhJ"><div class="icon-name">TRhJ</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/TRhs.jpg" title="TRhs"><div class="icon-name">TRhs</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/TRhs2.jpg" title="TRhs2"><div class="icon-name">TRhs2</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/TRv.jpg" title="TRv"><div class="icon-name">TRv</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/TRv2.jpg" title="TRv2"><div class="icon-name">TRv2</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Tableau_BIF.jpg" title="Tableau_BIF"><div class="icon-name">Tableau_BIF</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Tableau_GIVRE.jpg" title="Tableau_GIVRE"><div class="icon-name">Tableau_GIVRE</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Tableau_TIP.jpg" title="Tableau_TIP"><div class="icon-name">Tableau_TIP</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Tableau_Y.jpg" title="Tableau_Y"><div class="icon-name">Tableau_Y</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/TmpCancelled_H_BAL.jpg" title="TmpCancelled_H_BAL"><div class="icon-name">TmpCancelled_H_BAL</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/TramRT_limitation_30.jpg" title="TramRT_limitation_30"><div class="icon-name">TramRT_limitation_30</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/Tramway_feux.jpg" title="Tramway_feux"><div class="icon-name">Tramway_feux</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/VL_A_BAL_F.jpg" title="VL_A_BAL_F"><div class="icon-name">VL_A_BAL_F</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/VL_C_BAL.jpg" title="VL_C_BAL"><div class="icon-name">VL_C_BAL</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/VL_C_BAL_dim.jpg" title="VL_C_BAL_dim"><div class="icon-name">VL_C_BAL_dim</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/VL_Cible_A1.jpg" title="VL_Cible_A1"><div class="icon-name">VL_Cible_A1</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/VL_Cible_A3.jpg" title="VL_Cible_A3"><div class="icon-name">VL_Cible_A3</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/VL_Cible_C1.jpg" title="VL_Cible_C1"><div class="icon-name">VL_Cible_C1</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/VL_Cible_F1.jpg" title="VL_Cible_F1"><div class="icon-name">VL_Cible_F1</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/VL_Cible_H1.jpg" title="VL_Cible_H1"><div class="icon-name">VL_Cible_H1</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/VL_Cible_K1.jpg" title="VL_Cible_K1"><div class="icon-name">VL_Cible_K1</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/VL_Cible_R1.jpg" title="VL_Cible_R1"><div class="icon-name">VL_Cible_R1</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/VL_F_BAL.jpg" title="VL_F_BAL"><div class="icon-name">VL_F_BAL</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/VL_F_BAL_F.jpg" title="VL_F_BAL_F"><div class="icon-name">VL_F_BAL_F</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/VL_H_BAL.jpg" title="VL_H_BAL"><div class="icon-name">VL_H_BAL</div></div>
+<div class="icon-card"><img src="data/signals_ref/fr_diagrams_pngs/VL_R_BAPR_BM.jpg" title="VL_R_BAPR_BM"><div class="icon-name">VL_R_BAPR_BM</div></div>
+  </div>
+
+  <div class="subsection-title" style="margin-top:28px">Suisse — CFF (53 diagrammes)</div>
+  <div class="icon-grid">
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/Anfangssignal_für_Strassenbahnbereich.jpg" title="Anfangssignal_für_Strassenbahnbereich"><div class="icon-name">Anfangssignal_für_Strassenbahnbereich</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/El1-ch.jpg" title="El1-ch"><div class="icon-name">El1-ch</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/El2-ch.jpg" title="El2-ch"><div class="icon-name">El2-ch</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/El3-ch.jpg" title="El3-ch"><div class="icon-name">El3-ch</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/El4-ch.jpg" title="El4-ch"><div class="icon-name">El4-ch</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/El5-ch.jpg" title="El5-ch"><div class="icon-name">El5-ch</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/El6-ch.jpg" title="El6-ch"><div class="icon-name">El6-ch</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/El7-ch.jpg" title="El7-ch"><div class="icon-name">El7-ch</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/El8-ch.jpg" title="El8-ch"><div class="icon-name">El8-ch</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/El9-ch.jpg" title="El9-ch"><div class="icon-name">El9-ch</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/Endsignal_für_Strassenbahnbereich.jpg" title="Endsignal_für_Strassenbahnbereich"><div class="icon-name">Endsignal_für_Strassenbahnbereich</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/Hemmschuhwarntafel.jpg" title="Hemmschuhwarntafel"><div class="icon-name">Hemmschuhwarntafel</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/Merktafel_Übergang_in_nicht_zentralisierten_Bereich.jpg" title="Merktafel_Übergang_in_nicht_zentralisierten_Bereich"><div class="icon-name">Merktafel_Übergang_in_nicht_zentralisierten_Bereich</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/Nga_04.jpg" title="Nga_04"><div class="icon-name">Nga_04</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/Rangierhaltsignal_303.jpg" title="Rangierhaltsignal_303"><div class="icon-name">Rangierhaltsignal_303</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/Rangierhaltsignal_304.jpg" title="Rangierhaltsignal_304"><div class="icon-name">Rangierhaltsignal_304</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/Rangierhaltsignal_305.jpg" title="Rangierhaltsignal_305"><div class="icon-name">Rangierhaltsignal_305</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/Rangierhaltsignal_306.jpg" title="Rangierhaltsignal_306"><div class="icon-name">Rangierhaltsignal_306</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/Rückseite_Rangiersignale.jpg" title="Rückseite_Rangiersignale"><div class="icon-name">Rückseite_Rangiersignale</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/Rückseite_Rangiersignale_dunkel.jpg" title="Rückseite_Rangiersignale_dunkel"><div class="icon-name">Rückseite_Rangiersignale_dunkel</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/Rückstellsignal.jpg" title="Rückstellsignal"><div class="icon-name">Rückstellsignal</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/Rückstellsignal_dunkel.jpg" title="Rückstellsignal_dunkel"><div class="icon-name">Rückstellsignal_dunkel</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/SBB_Signal_-_Neutral_Section.jpg" title="SBB_Signal_-_Neutral_Section"><div class="icon-name">SBB_Signal_-_Neutral_Section</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/SBB_Signal_-_Neutral_Section_-_End.jpg" title="SBB_Signal_-_Neutral_Section_-_End"><div class="icon-name">SBB_Signal_-_Neutral_Section_-_End</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/SBB_Signal_-_Whistle.jpg" title="SBB_Signal_-_Whistle"><div class="icon-name">SBB_Signal_-_Whistle</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/Sperrsignal.jpg" title="Sperrsignal"><div class="icon-name">Sperrsignal</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/Strassenbahn_-_Ausser_Betrieb.jpg" title="Strassenbahn_-_Ausser_Betrieb"><div class="icon-name">Strassenbahn_-_Ausser_Betrieb</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/Strassenbahn_-_Fahrt.jpg" title="Strassenbahn_-_Fahrt"><div class="icon-name">Strassenbahn_-_Fahrt</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/Strassenbahn_-_Fahrt_nach_rechts.jpg" title="Strassenbahn_-_Fahrt_nach_rechts"><div class="icon-name">Strassenbahn_-_Fahrt_nach_rechts</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/Strassenbahn_-_Halt.jpg" title="Strassenbahn_-_Halt"><div class="icon-name">Strassenbahn_-_Halt</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/Swiss_Signal_CAB_End.jpg" title="Swiss_Signal_CAB_End"><div class="icon-name">Swiss_Signal_CAB_End</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/Swiss_Signal_CAB_Start.jpg" title="Swiss_Signal_CAB_Start"><div class="icon-name">Swiss_Signal_CAB_Start</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/Swiss_Signal_Distant_Lower_Pantograph.jpg" title="Swiss_Signal_Distant_Lower_Pantograph"><div class="icon-name">Swiss_Signal_Distant_Lower_Pantograph</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/Swiss_Signal_Distant_Repeater.jpg" title="Swiss_Signal_Distant_Repeater"><div class="icon-name">Swiss_Signal_Distant_Repeater</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/Swiss_Signal_ETCS_Shunting_Back.jpg" title="Swiss_Signal_ETCS_Shunting_Back"><div class="icon-name">Swiss_Signal_ETCS_Shunting_Back</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/Swiss_Signal_ETCS_Shunting_Back_Stop.jpg" title="Swiss_Signal_ETCS_Shunting_Back_Stop"><div class="icon-name">Swiss_Signal_ETCS_Shunting_Back_Stop</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/Swiss_Signal_ETCS_Shunting_End.jpg" title="Swiss_Signal_ETCS_Shunting_End"><div class="icon-name">Swiss_Signal_ETCS_Shunting_End</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/Swiss_Signal_ETCS_Shunting_Proceed.jpg" title="Swiss_Signal_ETCS_Shunting_Proceed"><div class="icon-name">Swiss_Signal_ETCS_Shunting_Proceed</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/Swiss_Signal_ETCS_Shunting_Proceed_with_caution.jpg" title="Swiss_Signal_ETCS_Shunting_Proceed_with_caution"><div class="icon-name">Swiss_Signal_ETCS_Shunting_Proceed_with_caution</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/Swiss_Signal_ETCS_Shunting_Stop.jpg" title="Swiss_Signal_ETCS_Shunting_Stop"><div class="icon-name">Swiss_Signal_ETCS_Shunting_Stop</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/Swiss_Signal_Level_Crossing_Announce.jpg" title="Swiss_Signal_Level_Crossing_Announce"><div class="icon-name">Swiss_Signal_Level_Crossing_Announce</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/Swiss_Signal_Lower_Pantograph.jpg" title="Swiss_Signal_Lower_Pantograph"><div class="icon-name">Swiss_Signal_Lower_Pantograph</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/Swiss_Signal_Raise_Pantograph.jpg" title="Swiss_Signal_Raise_Pantograph"><div class="icon-name">Swiss_Signal_Raise_Pantograph</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/Swiss_Signal_Resume_Speed.jpg" title="Swiss_Signal_Resume_Speed"><div class="icon-name">Swiss_Signal_Resume_Speed</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/Swiss_Signal_Shunting_Evacuation_Allowed_1.jpg" title="Swiss_Signal_Shunting_Evacuation_Allowed_1"><div class="icon-name">Swiss_Signal_Shunting_Evacuation_Allowed_1</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/Swiss_Signal_Shunting_Evacuation_Allowed_2.jpg" title="Swiss_Signal_Shunting_Evacuation_Allowed_2"><div class="icon-name">Swiss_Signal_Shunting_Evacuation_Allowed_2</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/Swiss_Signal_Shunting_Evacuation_Forbidden_1.jpg" title="Swiss_Signal_Shunting_Evacuation_Forbidden_1"><div class="icon-name">Swiss_Signal_Shunting_Evacuation_Forbidden_1</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/Swiss_Signal_Shunting_Evacuation_Forbidden_2.jpg" title="Swiss_Signal_Shunting_Evacuation_Forbidden_2"><div class="icon-name">Swiss_Signal_Shunting_Evacuation_Forbidden_2</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/Swiss_Signal_Station_Begin.jpg" title="Swiss_Signal_Station_Begin"><div class="icon-name">Swiss_Signal_Station_Begin</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/Swiss_Signal_Station_End.jpg" title="Swiss_Signal_Station_End"><div class="icon-name">Swiss_Signal_Station_End</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/Swiss_Signal_Station_announce.jpg" title="Swiss_Signal_Station_announce"><div class="icon-name">Swiss_Signal_Station_announce</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/Swiss_Signal_Stop.jpg" title="Swiss_Signal_Stop"><div class="icon-name">Swiss_Signal_Stop</div></div>
+<div class="icon-card"><img src="data/signals_ref/ch_diagrams_pngs/Vorsignal_für_Strassenbahnbereich.jpg" title="Vorsignal_für_Strassenbahnbereich"><div class="icon-name">Vorsignal_für_Strassenbahnbereich</div></div>
+  </div>
+
+  <br><br>
+  <div class="match-diagram">
+    <span class="hl">Crop YOLO</span> (bbox + marge 20 %)
+    <br><span class="dim">  │  encode CLIP ViT-B/32</span>
+    <br><span class="dim">  ▼</span>
+    <br><span class="hl">Similarité cosinus</span> contre corpus pré-encodé (cache .npy)
+    <br><span class="dim">  │</span>
+    <br><span class="dim">  ▼</span>
+    <br><span class="wip">Top-5 signaux candidats</span> + score → viewer HTML &nbsp;<span class="dim">[en cours d'évaluation]</span>
+  </div>
+</section>
+
+<hr>
+
+<!-- Statut -->
+<section>
+  <h2><span class="num">⊙</span> Statut</h2><br>
+  <table>
+    <thead><tr><th>Étape</th><th>Statut</th></tr></thead>
+    <tbody>
+      <tr class="done-row"><td>✅ Téléchargement vidéos YouTube</td><td>opérationnel</td></tr>
+      <tr class="done-row"><td>✅ Extraction + filtrage cab-view (CLIP)</td><td>validé FR 99.8 % · CH 98.1 %</td></tr>
+      <tr class="done-row"><td>✅ Détection panneaux YOLOv26</td><td>bbox correctes FR + CH, ~25 fps CPU</td></tr>
+      <tr class="done-row"><td>✅ Corpus SVG Wikimedia</td><td>201 SNCF + 53 CFF téléchargés</td></tr>
+      <tr class="wip-row"><td>🔄 Matching CLIP crop → catalogue</td><td>en cours d'évaluation</td></tr>
+      <tr class="todo-row"><td>⬜ Classification fine des panneaux</td><td>à faire</td></tr>
+    </tbody>
+  </table>
+</section>
+
+</div>
+<script>
+function switchTab(id, btn) {
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + id).classList.add('active');
+  btn.classList.add('active');
+}
+</script>
+</body>
+</html>
