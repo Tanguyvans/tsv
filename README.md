@@ -210,20 +210,30 @@ pip install -r requirements.txt
 
 ---
 
-## Pipeline 2 — Estimation de distance par profondeur monoculaire
+## Pipeline 2 — Estimation de distance
 
-Compare la distance estimée par 3 modèles de depth estimation contre la référence stéréo **MultiSense M1** (fx = 1288.33 px).
+Deux approches pour estimer la distance d'un panneau ferroviaire détecté par YOLO :
+
+```
+Frame vidéo + détection YOLO (bbox panneau)
+          │
+          ├─── Approche A : MultiSense (stéréo) ──────► estimate_msense_distance.py
+          │         vidéo depth FFV1 gray16le             distance métrique (mm → m)
+          │
+          └─── Approche B : Depth Anything (mono) ───► estimate_dav2/da3/vda_distance.py
+                    depth map + focale caméra            distance métrique (mètres)
+```
 
 ### Méthodes comparées
 
-| Méthode | Modèle | Type | Référence |
+| Méthode | Modèle | Type | Source |
 |---|---|---|---|
-| **msense** | MultiSense M1 (stéréo) | Métrique (référence) | Caméra embarquée |
-| **dav2** | Depth Anything V2 Metric Outdoor Small | Métrique (mètres) | HuggingFace `depth-anything/Depth-Anything-V2-Metric-Outdoor-Small-hf` |
-| **da3** | Depth Anything 3 Metric Large | Métrique (mètres) | HuggingFace `depth-anything/DA3METRIC-LARGE-1.1` |
-| **vda** | Video Depth Anything ViT-S | Relatif (sans échelle) | GitHub `DepthAnything/Video-Depth-Anything` |
+| **msense** | MultiSense M1 — stéréo | Métrique · référence | Caméra embarquée (fx = 1288.33 px) |
+| **dav2** | Depth Anything V2 Metric Outdoor Small | Métrique (m) | `depth-anything/Depth-Anything-V2-Metric-Outdoor-Small-hf` |
+| **da3** | Depth Anything 3 Metric Large 1.1 | Métrique (m) | `depth-anything/DA3METRIC-LARGE-1.1` |
+| **vda** | Video Depth Anything ViT-S | Relatif (sans échelle) | `DepthAnything/Video-Depth-Anything` |
 
-### Résultats (560 frames, 28 séquences, fx = 1288.33 px)
+### Résultats (560 frames · 28 séquences · fx = 1288.33 px)
 
 | Méthode | Distance médiane | Erreur vs msense |
 |---|---|---|
@@ -232,13 +242,13 @@ Compare la distance estimée par 3 modèles de depth estimation contre la réfé
 | da3 | 26.4 m | 153 % |
 | vda | relatif | non comparable |
 
-### Lancer le benchmark (GPU, cluster Lucia)
+### Lancer le benchmark (GPU · cluster Lucia)
 
 ```bash
-# Soumettre le job SLURM
+# Job SLURM
 sbatch benchmark_gpu_focal.sh
 
-# Ou en interactif
+# Interactif
 PYTHONPATH=. python src/depth/benchmark_msense_vs_depth_anything.py \
   --data-root $DATA \
   --ckpt yolo_signs_best.pt \
@@ -249,7 +259,7 @@ PYTHONPATH=. python src/depth/benchmark_msense_vs_depth_anything.py \
   --out depth_benchmark_focal_full
 ```
 
-### Générer la vidéo de comparaison
+### Vidéo de comparaison (grille 2×2 · 1920×1080)
 
 ```bash
 PYTHONPATH=. python src/depth/make_method_comparison_video.py \
@@ -258,47 +268,17 @@ PYTHONPATH=. python src/depth/make_method_comparison_video.py \
 # → depth_benchmark_focal_full/comparison_depth_methods/*.mp4
 ```
 
-Layout : grille 2×2 (1920×1080) — msense avec bbox, depth colormaps pour dav2/da3/vda.
+Panneau msense : frame brute + bbox + distance. Panneaux depth : colormap plein écran + distance.
 
-### Modules depth
+### Modules
 
 | Script | Description |
 |---|---|
-| `src/depth/benchmark_msense_vs_depth_anything.py` | Orchestrateur principal — lance toutes les méthodes |
-| `src/depth/estimate_dav2_distance.py` | Inférence Depth Anything V2 |
-| `src/depth/estimate_da3_distance.py` | Inférence Depth Anything 3 |
-| `src/depth/estimate_vda_distance.py` | Inférence Video Depth Anything |
+| `src/depth/benchmark_msense_vs_depth_anything.py` | Orchestrateur — lance toutes les méthodes |
+| `src/depth/estimate_msense_distance.py` | Distance via vidéo depth MultiSense (stéréo) |
+| `src/depth/estimate_dav2_distance.py` | Distance via Depth Anything V2 |
+| `src/depth/estimate_da3_distance.py` | Distance via Depth Anything 3 |
+| `src/depth/estimate_vda_distance.py` | Distance via Video Depth Anything |
 | `src/depth/benchmark_depth_methods.py` | Agrégation et métriques |
-| `src/depth/make_method_comparison_video.py` | Vidéo de comparaison 2×2 |
+| `src/depth/make_method_comparison_video.py` | Vidéo comparaison 2×2 |
 | `src/depth/track_distance_timeseries.py` | Courbe de distance dans le temps |
-
----
-
-## Pipeline 3 — Détection de signaux GERALD
-
-Pipeline deux étapes sur le dataset GERALD (images de signaux ferroviaires annotés VOC) :
-
-```
-Images GERALD (VOC)
-      │
-      ▼
-stage1_yolo_pole.py    Détecte les mâts (YOLO)
-      │
-      ▼
-stage2_classifier.py   Classifie has_panel / no_panel (EfficientNet-B0)
-```
-
-### Modules signals
-
-| Script | Description |
-|---|---|
-| `src/signals/download_gerald.py` | Téléchargement dataset GERALD |
-| `src/signals/stage1_yolo_pole.py` | Détection mâts (YOLO) |
-| `src/signals/stage2_classifier.py` | Classification panneau (EfficientNet) |
-| `src/signals/pipeline_a.py` | Pipeline YOLO → EfficientNet end-to-end |
-| `src/signals/pipeline_b.py` | Variante pipeline |
-| `src/signals/eval_pipelines.py` | Évaluation comparative A vs B |
-| `src/signals/extract_masts.py` | Extraction crops de mâts |
-| `src/signals/voc_to_yolo.py` | Conversion annotations VOC → YOLO |
-| `src/signals/estimate_msense_signal_distance.py` | Distance signal via MSense |
-| `src/signals/make_before_after.py` | Visualisation avant/après |
