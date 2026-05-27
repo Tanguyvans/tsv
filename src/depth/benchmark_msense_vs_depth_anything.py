@@ -30,7 +30,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from src.signals.estimate_msense_signal_distance import (
+from src.depth.estimate_msense_distance import (
     HEIGHT,
     WIDTH,
     clip_box,
